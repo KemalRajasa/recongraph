@@ -1,0 +1,10 @@
+title: Synthetic Classic PowerShell Data
+id: 00000000-0000-0000-0000-000000000002
+level: low
+logsource:
+    product: windows
+    category: ps_classic_start
+detection:
+    selection:
+        Data|contains: 'HostName=ConsoleHost'
+    condition: selection

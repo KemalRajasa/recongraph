@@ -19,6 +19,14 @@ While the tool attempts to be flexible, it specifically looks for the following 
 Other formats supported:
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
+**Plaso JSON Lines** (``psort -o json_line``, ``.jsonl``) are recommended for Windows event logs: the EVTX XML in
+``xml_string`` is parsed into named fields (``EventID``, ``Channel``, ``Provider_Name``, every ``EventData``/``UserData``
+field), and the Sigma logsource is derived from ``Channel`` and ``EventID``. Only the ``Creation Time`` row of each
+record is kept (``--keep-all-timestamps`` keeps all), timestamps before 1970 are dropped, and rows are sorted by time.
+``Channel`` holds the ``UserData`` channel when present (e.g. the cleared log of EventID 104), while the logsource
+always follows the ``System`` channel. ``Data`` elements without a ``Name`` become ``param1``, ``param2``, ... and are
+also joined with newlines into ``Data``. XML-illegal control characters are removed before parsing.
+
 If not using a Plaso CSV, ReconGraph can also process **raw text logs**. In this case, the tool will treat each line as a description and use the current filename as the source.
 
 Sigma Rules

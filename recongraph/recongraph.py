@@ -16,6 +16,8 @@ import yaml
 from typing import List, Dict, Any
 from pathlib import Path
 
+from recongraph.input_adapters import GENERIC_COLUMNS, detect_input_format, load_plaso_jsonl
+
 logger = logging.getLogger(__name__)
 
 
@@ -406,11 +408,12 @@ class SigmaLabel(object):
     identifying the appropriate log type and source, and applying the loaded 
     Sigma rules to each entry to generate a labeled dataset.
     """
-    def __init__(self, input_file, rules_dir=None, flexible_mode=True):
+    def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False):
         self.input_file = input_file
         self.rules_dir = rules_dir
         self.flexible_mode = flexible_mode
-    
+        self.keep_all_timestamps = keep_all_timestamps
+
     def count_lines(self):
         """
         Counts the number of lines in the input file.
@@ -521,10 +524,12 @@ class SigmaLabel(object):
         if not rules_loader.matchers:
              print("No rules loaded! Continuing without matching...")
 
-        is_csv = self.input_file.endswith('.csv')
-        df = pd.DataFrame() 
+        input_format = detect_input_format(self.input_file)
+        df = pd.DataFrame()
 
-        if is_csv:
+        if input_format == "plaso_jsonl":
+            df = load_plaso_jsonl(self.input_file, keep_all_timestamps=self.keep_all_timestamps)
+        elif input_format == "plaso_csv":
             try:
                 df = pd.read_csv(self.input_file, dtype=str)
             except:
@@ -540,6 +545,7 @@ class SigmaLabel(object):
                 print(f"Error reading file: {e}")
                 return df
 
+        event_fields = [c for c in df.columns if c not in GENERIC_COLUMNS] if input_format == "plaso_jsonl" else []
         processed_rows = []
         total_rows = len(df)
         print(f"- Labeling {total_rows} rows...")
@@ -564,17 +570,22 @@ class SigmaLabel(object):
             elif 'source' in row: fname = str(row['source'])
             elif len(row) > 6 and isinstance(row.values[6], str): fname = row.values[6]
 
-            features = self.detect_log_type(str(desc), str(fname))
-            
-            log_entry = {
-                "desc": desc,
-                "log_type": features["log_type"], 
-                "cs-method": features.get("cs-method", ""),
-                "c-uri": features.get("c-uri", ""),
-                "sc-status": features.get("sc-status", ""),
-                "cs-user-agent": features.get("cs-user-agent", ""),
-                "service": features.get("service", ""), 
-            }
+            if input_format == "plaso_jsonl" and isinstance(row.get('log_type'), list):
+                features = {"log_type": row['log_type']}
+                log_entry = {k: row[k] for k in event_fields if isinstance(row[k], str) and row[k]}
+                log_entry.update(desc=desc, log_type=row['log_type'])
+            else:
+                features = self.detect_log_type(str(desc), str(fname))
+
+                log_entry = {
+                    "desc": desc,
+                    "log_type": features["log_type"],
+                    "cs-method": features.get("cs-method", ""),
+                    "c-uri": features.get("c-uri", ""),
+                    "sc-status": features.get("sc-status", ""),
+                    "cs-user-agent": features.get("cs-user-agent", ""),
+                    "service": features.get("service", ""),
+                }
 
             matches = rules_loader.check_row(log_entry)
             
@@ -868,11 +879,12 @@ class ReconGraph(object):
     to a behavioral graph. It simplifies complex operations into a 
     single automated workflow.
     """
-    def __init__(self, input_file, rules_dir=None, flexible_mode=True):
+    def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False):
         self.input_file = input_file
         self.rules_dir = rules_dir
         self.flexible_mode = flexible_mode
-        
+        self.keep_all_timestamps = keep_all_timestamps
+
     def run_all(self, graph_output="reconstruction_edge_graph.graphml", 
                 csv_output=None, sigma_output=None):
         """
@@ -886,7 +898,8 @@ class ReconGraph(object):
         print(f"[+] Starting ReconGraph Pipeline for {self.input_file}")
         
         print("[Phase 1] Sigma Labeling")
-        labeler = SigmaLabel(self.input_file, self.rules_dir, flexible_mode=self.flexible_mode)
+        labeler = SigmaLabel(self.input_file, self.rules_dir, flexible_mode=self.flexible_mode,
+                             keep_all_timestamps=self.keep_all_timestamps)
         df_labeled = labeler.run()
         
         if sigma_output:
@@ -911,20 +924,23 @@ def main():
     Uses the ReconGraph facade to run the full pipeline.
     """
     parser = argparse.ArgumentParser(description='Reconstruct a graph from forensic timeline.')
-    parser.add_argument('-f', '--file', required=True, help='Path to the input file (CSV or TXT)')
+    parser.add_argument('-f', '--file', required=True, help='Path to the input file (Plaso CSV, Plaso JSON Lines, or TXT)')
     parser.add_argument('-o', '--output', help='Output filename for the GraphML file', default='reconstruction_edge_graph.graphml')
     parser.add_argument('-r', '--rules', help='Path to the rules directory (defaults to the SIGMA_RULES_PATH environment variable if set)', default=os.environ.get('SIGMA_RULES_PATH'))
     parser.add_argument('--export-csv', nargs='?', const='reconstruction_event_logs.csv', default=None, help='Export detailed event logs to a separate CSV file')
     parser.add_argument('--export-sigma', nargs='?', const='AUTO', default=None, help='Export the sigma-labeled DataFrame to a CSV file')
     parser.add_argument('--strict', action='store_true', help='Disable flexible matching mode (strict validation)')
-    
+    parser.add_argument('--keep-all-timestamps', action='store_true', help='JSON Lines input: keep every timestamp row of an EVTX record instead of only "Creation Time"')
+
     args = parser.parse_args()
-    
+    logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+
     if os.path.exists(args.file):
         pipeline = ReconGraph(
-            input_file=args.file, 
+            input_file=args.file,
             rules_dir=getattr(args, 'rules', None),
-            flexible_mode=not args.strict
+            flexible_mode=not args.strict,
+            keep_all_timestamps=args.keep_all_timestamps
         )
         
         pipeline.run_all(

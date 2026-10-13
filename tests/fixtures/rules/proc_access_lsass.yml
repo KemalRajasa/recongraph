@@ -1,0 +1,10 @@
+title: Synthetic LSASS Access
+id: 00000000-0000-0000-0000-000000000001
+level: high
+logsource:
+    product: windows
+    category: process_access
+detection:
+    selection:
+        TargetImage|endswith: '\lsass.exe'
+    condition: selection

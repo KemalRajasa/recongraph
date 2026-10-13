@@ -8,24 +8,33 @@ ReconGraph can be used from the command line to process Plaso CSV files or raw l
 
 .. code-block:: bash
 
-   recongraph [-h] -f FILE [-o OUTPUT] [-r RULES] [--export-csv [EXPORT_CSV]] [--export-sigma [EXPORT_SIGMA]] [--strict]
+   recongraph [-h] -f FILE [-o OUTPUT] [-r RULES] [--export-csv [EXPORT_CSV]] [--export-sigma [EXPORT_SIGMA]] [--strict] [--keep-all-timestamps]
 
 Arguments:
 ^^^^^^^^^^
 
-*   ``-f``, ``--file``: Path to the input log file (**Plaso CSV** or raw TXT). **Required**.
+*   ``-f``, ``--file``: Path to the input log file (**Plaso CSV**, **Plaso JSON Lines** from ``psort -o json_line``, or raw TXT). **Required**.
 *   ``-o``, ``--output``: Output filename for the GraphML file (default: ``reconstruction_edge_graph.graphml``).
 *   ``-r``, ``--rules``: Path to the directory containing **Sigma rules** (.yml files).
 *   ``--export-csv``: Export detailed event logs to a separate CSV file (``reconstruction_event_logs.csv``).
 *   ``--export-sigma``: Export the full sigma-labeled DataFrame to a CSV file.
 *   ``--strict``: Disable flexible matching mode (enforce strict logsource validation).
+*   ``--keep-all-timestamps``: JSON Lines input only. Keep every timestamp row of an EVTX record instead of only ``Creation Time``.
 
 Example:
 ^^^^^^^^
 
 .. code-block:: bash
 
-   recongraph -f forensic_timeline.csv -r ./sigma_rules/ 
+   recongraph -f forensic_timeline.csv -r ./sigma_rules/
+
+For Windows event logs, JSON Lines input exposes the named EVTX fields (``Image``, ``CommandLine``, ``TargetImage``, ...)
+that field-based Sigma rules need:
+
+.. code-block:: bash
+
+   psort.py -o json_line -w timeline.jsonl timeline.plaso
+   recongraph -f timeline.jsonl -r ./sigma/rules/windows --strict
 
 Running with Docker
 -------------------

@@ -218,12 +218,13 @@ docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-f`, `--file` | Path to the input file (CSV or TXT). **Required.** | — |
+| `-f`, `--file` | Path to the input file (Plaso CSV, Plaso JSON Lines, or TXT). **Required.** | — |
 | `-r`, `--rules` | Path to the Sigma rules directory. | `$SIGMA_RULES_PATH` if set, else none |
 | `-o`, `--output` | Output filename for the GraphML file. | `reconstruction_edge_graph.graphml` |
 | `--export-csv` | Also export detailed event logs to a CSV file. | `reconstruction_event_logs.csv` |
 | `--export-sigma` | Also export the Sigma-labeled DataFrame to a CSV file. | `<input>_sigma_labeled.csv` |
 | `--strict` | Disable flexible matching (enable strict logsource validation). | flexible mode |
+| `--keep-all-timestamps` | JSON Lines input: keep every timestamp row of an EVTX record (by default only `Creation Time` is kept). | off |
 
 ## Input Data Format
 
@@ -231,6 +232,32 @@ docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
 
 A sequential log file of system activities. `recongraph` supports the CSV format
 produced by Plaso (`log2timeline`).
+
+### Plaso JSON Lines (`<filename>.jsonl`)
+
+For Windows event logs, prefer `psort -o json_line` output. Its `xml_string`
+carries the full EVTX event, so `recongraph` can match field-based Sigma rules
+(`Image`, `CommandLine`, `TargetImage`, ...), which the CSV `message` column does
+not name. A file is treated as JSON Lines when it ends in `.jsonl`/`.json` or its
+first line is a JSON object with a `data_type` key.
+
+For each EVTX record `recongraph` extracts `EventID`, `Channel`, `Provider_Name`,
+`Computer`, `EventRecordID`, `Security_UserID` and every `EventData`/`UserData`
+field, derives the Sigma logsource (service from `Channel`, category from Sysmon,
+PowerShell and Security 4688 event IDs), keeps one row per record (`Creation Time`),
+drops timestamps before 1970 and sorts by time. The input file is never modified.
+
+- `Channel` holds the `UserData` channel when present (e.g. the cleared log of
+  EventID 104); the logsource is always derived from the `System` channel.
+- `Data` elements without a `Name` become `param1`, `param2`, ... and are also
+  joined with newlines into a `Data` field.
+- Control characters that are illegal in XML 1.0 are removed before parsing; events
+  whose XML is still unparsable keep only the generic columns.
+
+```bash
+psort.py -o json_line -w timeline.jsonl timeline.plaso
+recongraph -f timeline.jsonl -r ./sigma/rules/windows --strict
+```
 
 ### Sigma Rules (rules directory)
 
