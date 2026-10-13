@@ -3,7 +3,8 @@ import logging
 import re
 import yaml
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from statistics import median_low
 from typing import List, Dict, Any
 from collections import defaultdict
 import networkx as nx
@@ -610,8 +611,14 @@ class EdgeGraph(object):
     MultiDiGraph where nodes represent unique event types and edges represent 
     temporal transitions between them. It captures event frequency and 
     associated log metadata to facilitate forensic analysis.
+
+    Transitions follow timestamp order (``edge_order="time"``, ties keep row order)
+    or row order (``edge_order="file"``, the original behavior).
     """
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, edge_order: str = "time"):
+        if edge_order not in ("time", "file"):
+            raise ValueError(f"edge_order must be 'time' or 'file', got {edge_order!r}")
+        self.edge_order = edge_order
         self.df = df.copy()
         
         if 'message' not in self.df.columns:
@@ -637,10 +644,28 @@ class EdgeGraph(object):
         self.node_members = defaultdict(list)
         self.event_logs = defaultdict(list)
         self.event_timestamps = defaultdict(list)
-        
+        self.event_rows = defaultdict(list)
+        self.event_times_us = defaultdict(list)
+        self.sequence = []
+
         self.edges_list = []
         self.edges_weight = defaultdict(int)
         self.edges_weight_list = []
+        self.temporal_edges = []
+        self.edge_transitions = defaultdict(list)
+        self.T = nx.MultiDiGraph()
+
+    @staticmethod
+    def _to_epoch_us(values: pd.Series) -> list:
+        """Parse timestamps as UTC; epoch microseconds per value, None when empty or invalid."""
+        parsed = pd.to_datetime(values, utc=True, errors="coerce", format="ISO8601")
+        epoch, one_us = pd.Timestamp(0, tz="UTC"), pd.Timedelta(1, "us")
+        return [None if pd.isna(t) else (t - epoch) // one_us for t in parsed]
+
+    @staticmethod
+    def _time_attrs(name: str, epoch_us: int) -> dict:
+        iso = (datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=epoch_us)).isoformat(timespec="microseconds")
+        return {name: iso, f"{name}_us": epoch_us}
 
     def define_events(self):
         """
@@ -688,21 +713,32 @@ class EdgeGraph(object):
         """
         self.log_event_id = []
         self.node_members = defaultdict(list)
-        self.event_logs = defaultdict(list)        
-        self.event_timestamps = defaultdict(list)  
+        self.event_logs = defaultdict(list)
+        self.event_timestamps = defaultdict(list)
+        self.event_rows = defaultdict(list)
+        self.event_times_us = defaultdict(list)
+        self.sequence = []
+        times_us = self._to_epoch_us(self.df['datetime'])
 
-        for line_id, row in self.df.iterrows():
+        for position, (line_id, row) in enumerate(self.df.iterrows()):
             sigma_value = row.get('sigma')
-            desc_value = row.get('message')            
-            timestamp_value = row.get('datetime')  
-            
+            desc_value = row.get('message')
+            timestamp_value = row.get('datetime')
+
             if pd.notna(sigma_value) and sigma_value != '':
                 if sigma_value in self.events_dict:
                     event_id = self.events_dict[sigma_value]
                     self.log_event_id.append(event_id)
                     self.node_members[event_id].append(line_id)
-                    self.event_logs[event_id].append(desc_value)            
-                    self.event_timestamps[event_id].append(timestamp_value) 
+                    self.event_logs[event_id].append(desc_value)
+                    self.event_timestamps[event_id].append(timestamp_value)
+                    self.event_rows[event_id].append(position)
+                    self.event_times_us[event_id].append(times_us[position])
+                    self.sequence.append((event_id, times_us[position], position))
+
+        missing = sum(t is None for _, t, _ in self.sequence)
+        if missing:
+            logger.info("%d labeled rows have an empty or invalid timestamp; their time attributes are left empty", missing)
 
     @staticmethod
     def extract_level(sigma_label: str) -> str:
@@ -752,32 +788,75 @@ class EdgeGraph(object):
                 self.G.nodes[event_id]['level'] = self.extract_level(
                     self.node_labels.get(event_id, "")
                 )
+                known = [t for t in self.event_times_us[event_id] if t is not None]
+                if known:
+                    self.G.nodes[event_id].update(self._time_attrs('first_seen', min(known)))
+                    self.G.nodes[event_id].update(self._time_attrs('last_seen', max(known)))
+
+    def _ordered_sequence(self) -> list:
+        """Return the (event_id, epoch_us, row) sequence in the configured edge order."""
+        if self.edge_order == "file":
+            return self.sequence
+        # a row without a timestamp sorts right after the row it follows in the file
+        keys, last = [], None
+        for _, t, _ in self.sequence:
+            last = t if t is not None else last
+            keys.append(last)
+        first = next((k for k in keys if k is not None), 0)
+        keys = [first if k is None else k for k in keys]
+        return [item for _, item in sorted(zip(keys, self.sequence), key=lambda pair: pair[0])]
 
     def create_edges(self):
         """
         Calculate edges based on event transitions.
 
-        This function iterates through the sequence of event IDs and creates edges
-        between consecutive events, counting their occurrences to determine weights.
+        This function orders the labeled events (see ``edge_order``), records every
+        consecutive transition with its timestamps and source rows, and counts the
+        transitions per event pair to determine weights.
         """
-        self.edges_list = []
+        sequence = self._ordered_sequence()
+        self.temporal_edges = []
+        self.edge_transitions = defaultdict(list)
         self.edges_weight = defaultdict(int)
-        log_event_id_len = len(self.log_event_id)
 
-        for index, event_id in enumerate(self.log_event_id):
-            if (index + 1) < log_event_id_len:
-                self.edges_list.append((event_id, self.log_event_id[index + 1]))
-                self.edges_weight[(event_id, self.log_event_id[index + 1])] += 1
+        for seq, ((u, t_u, row_u), (v, t_v, row_v)) in enumerate(zip(sequence, sequence[1:])):
+            attrs = {'seq': seq, 'src_row': row_u, 'dst_row': row_v}
+            if t_u is not None:
+                attrs.update(self._time_attrs('t_src', t_u))
+            if t_v is not None:
+                attrs.update(self._time_attrs('t_dst', t_v))
+            if t_u is not None and t_v is not None:
+                attrs['delta_us'] = t_v - t_u
+            self.temporal_edges.append((u, v, attrs))
+            self.edge_transitions[(u, v)].append(attrs)
+            self.edges_weight[(u, v)] += 1
+        self.edges_list = [(u, v) for u, v, _ in self.temporal_edges]
 
     def create_weighted_edges(self):
         """
         Format edges with weights for the graph.
 
-        This function prepares the list of weighted edges to be added to the networkx graph.
+        This function prepares the list of weighted edges to be added to the networkx graph,
+        with the first/last transition time and the min/median/max delay of each event pair.
         """
         self.edges_weight_list = []
         for edge, weight in self.edges_weight.items():
-            self.edges_weight_list.append((edge[0], edge[1], {'weight': weight}))
+            attrs = {'weight': weight}
+            transitions = self.edge_transitions[edge]
+            starts = [a['t_src_us'] for a in transitions if 't_src_us' in a]
+            deltas = sorted(a['delta_us'] for a in transitions if 'delta_us' in a)
+            if starts:
+                attrs.update(self._time_attrs('first_seen', min(starts)))
+                attrs.update(self._time_attrs('last_seen', max(starts)))
+            if deltas:
+                attrs.update(delta_min_us=deltas[0], delta_median_us=median_low(deltas), delta_max_us=deltas[-1])
+            self.edges_weight_list.append((edge[0], edge[1], attrs))
+
+    def create_temporal_graph(self):
+        """Build a MultiDiGraph with the aggregate graph's nodes and one edge per transition."""
+        self.T = nx.MultiDiGraph()
+        self.T.add_nodes_from(self.G.nodes(data=True))
+        self.T.add_edges_from(self.temporal_edges)
 
     def add_edges_to_graph(self):
         """
@@ -787,16 +866,18 @@ class EdgeGraph(object):
         """
         self.G.add_edges_from(self.edges_weight_list)
 
-    def write_to_graphml(self, output_filename="reconstruction_edge_graph.graphml"):
+    def write_to_graphml(self, output_filename="reconstruction_edge_graph.graphml", graph=None):
         """
         Save the graph to a GraphML file.
 
-        This function exports the constructed graph to a file in GraphML format.
+        This function exports the constructed graph (the aggregate graph unless
+        ``graph`` is given) to a file in GraphML format.
         """
-        filename_graph_output = output_filename 
-        nx.write_graphml_lxml(self.G, filename_graph_output)
+        graph = self.G if graph is None else graph
+        filename_graph_output = output_filename
+        nx.write_graphml_lxml(graph, filename_graph_output)
         print(f"[!] Graph saved to {filename_graph_output}")
-        print(f"[!] Graph contains {self.G.number_of_nodes()} nodes and {self.G.number_of_edges()} edges.")
+        print(f"[!] Graph contains {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
 
     def export_event_logs(self, output_filename="reconstruction_event_logs.csv"):
         """
@@ -809,34 +890,38 @@ class EdgeGraph(object):
         for event_id in self.event_logs.keys():
             logs = self.event_logs[event_id]
             timestamps = self.event_timestamps[event_id]
-            
-            for ts, log in zip(timestamps, logs):
+            rows = self.event_rows[event_id]
+            times_us = self.event_times_us[event_id]
+
+            for ts, log, row_index, ts_us in zip(timestamps, logs, rows, times_us):
                 csv_export_data.append({
                     'event_id': event_id,
                     'event_name': self.node_labels[event_id],
                     'timestamp': ts,
-                    'log': log
+                    'log': log,
+                    'row_index': row_index,
+                    'timestamp_us': ts_us
                 })
 
         if csv_export_data:
-            csv_export_df = pd.DataFrame(csv_export_data)
+            csv_export_df = pd.DataFrame(csv_export_data).astype({'timestamp_us': 'Int64'})
             csv_filename = output_filename
             csv_export_df.to_csv(csv_filename, index=False)
             print(f"[+] Event logs also saved to: {csv_filename}")
         else:
              print("[!] No event logs to export.")
 
-    def run_all(self, graph_output="reconstruction_edge_graph.graphml", csv_output=None):
+    def run_all(self, graph_output="reconstruction_edge_graph.graphml", csv_output=None, temporal_output=None):
         """
         Execute the full graph construction pipeline.
-        
+
         This function will run the full graph construction pipeline which consists of 6 phases:
         1. Defining Events
         2. Creating Graph Nodes
         3. Processing Log Events
         4. Adding Node Attributes
         5. Creating Edges
-        6. Writing Output
+        6. Writing Output (plus the per-transition graph when ``temporal_output`` is set)
         """
         if self.df.empty:
             print("[!] DataFrame is empty. Cannot build graph.")
@@ -866,6 +951,11 @@ class EdgeGraph(object):
         print("[+] Writing Output")
         self.write_to_graphml(graph_output)
 
+        if temporal_output:
+            print("[+] Writing Temporal Graph")
+            self.create_temporal_graph()
+            self.write_to_graphml(temporal_output, self.T)
+
         if csv_output:
             print("[+] Exporting Event Logs")
             self.export_event_logs(csv_output)
@@ -879,14 +969,16 @@ class ReconGraph(object):
     to a behavioral graph. It simplifies complex operations into a 
     single automated workflow.
     """
-    def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False):
+    def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False,
+                 edge_order="time"):
         self.input_file = input_file
         self.rules_dir = rules_dir
         self.flexible_mode = flexible_mode
         self.keep_all_timestamps = keep_all_timestamps
+        self.edge_order = edge_order
 
-    def run_all(self, graph_output="reconstruction_edge_graph.graphml", 
-                csv_output=None, sigma_output=None):
+    def run_all(self, graph_output="reconstruction_edge_graph.graphml",
+                csv_output=None, sigma_output=None, temporal_output=None):
         """
         Executes the full pipeline.
         
@@ -913,8 +1005,8 @@ class ReconGraph(object):
             print(f"Sigma-labeled data exported to: {final_sigma_output}")
             
         print("\n[Phase 2] Edge Graph Construction")
-        reconstruction = EdgeGraph(df_labeled)
-        reconstruction.run_all(graph_output=graph_output, csv_output=csv_output)
+        reconstruction = EdgeGraph(df_labeled, edge_order=self.edge_order)
+        reconstruction.run_all(graph_output=graph_output, csv_output=csv_output, temporal_output=temporal_output)
         print("\n[+] Pipeline Completed Successfully")
 
 
@@ -931,6 +1023,8 @@ def main():
     parser.add_argument('--export-sigma', nargs='?', const='AUTO', default=None, help='Export the sigma-labeled DataFrame to a CSV file')
     parser.add_argument('--strict', action='store_true', help='Disable flexible matching mode (strict validation)')
     parser.add_argument('--keep-all-timestamps', action='store_true', help='JSON Lines input: keep every timestamp row of an EVTX record instead of only "Creation Time"')
+    parser.add_argument('--edge-order', choices=['time', 'file'], default='time', help='Order transitions by timestamp (default) or by input row order')
+    parser.add_argument('--temporal-output', default=None, help='Also write a GraphML with one edge per transition (timestamps, delta, source rows)')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
@@ -940,13 +1034,15 @@ def main():
             input_file=args.file,
             rules_dir=getattr(args, 'rules', None),
             flexible_mode=not args.strict,
-            keep_all_timestamps=args.keep_all_timestamps
+            keep_all_timestamps=args.keep_all_timestamps,
+            edge_order=args.edge_order
         )
-        
+
         pipeline.run_all(
             graph_output=args.output,
             csv_output=args.export_csv,
-            sigma_output=args.export_sigma
+            sigma_output=args.export_sigma,
+            temporal_output=args.temporal_output
         )
             
     else:

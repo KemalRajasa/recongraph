@@ -225,6 +225,8 @@ docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
 | `--export-sigma` | Also export the Sigma-labeled DataFrame to a CSV file. | `<input>_sigma_labeled.csv` |
 | `--strict` | Disable flexible matching (enable strict logsource validation). | flexible mode |
 | `--keep-all-timestamps` | JSON Lines input: keep every timestamp row of an EVTX record (by default only `Creation Time` is kept). | off |
+| `--edge-order {time,file}` | Order transitions by timestamp (ties keep row order) or by input row order (the original behavior). | `time` |
+| `--temporal-output` | Also write a GraphML with one edge per transition. | none |
 
 ## Input Data Format
 
@@ -270,10 +272,18 @@ The tool generates the following files:
 
 - **GraphML File** (`reconstruction_edge_graph.graphml`): A directed graph where
   nodes are detected events and edges represent the flow between them. Suitable
-  for the bundled visualizer, Gephi, or Cytoscape.
+  for the bundled visualizer, Gephi, or Cytoscape. Each edge carries `weight`
+  (number of transitions), `first_seen`/`last_seen` (ISO 8601 UTC, plus `_us`
+  epoch microseconds) and `delta_min_us`/`delta_median_us`/`delta_max_us`; nodes
+  carry `first_seen`/`last_seen` too. Time attributes are omitted when timestamps
+  are missing or invalid.
+- **Temporal GraphML** (with `--temporal-output <path>`): the same nodes with one
+  edge per consecutive transition: `seq`, `t_src`/`t_dst` (+ `_us`), `delta_us`,
+  and `src_row`/`dst_row` (row index in the Sigma-labeled data).
 - **Event Logs CSV** (`reconstruction_event_logs.csv`, with `--export-csv`): A
   detailed breakdown of every log entry associated with a graph node, including
-  timestamps and raw message content.
+  timestamps and raw message content, plus `row_index` and `timestamp_us` to trace
+  temporal edges back to their log rows.
 - **Sigma Labeled CSV** (`<filename>_sigma_labeled.csv`, with `--export-sigma`):
   The input log file augmented with matching Sigma rule titles and severity levels.
 

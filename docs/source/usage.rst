@@ -9,6 +9,7 @@ ReconGraph can be used from the command line to process Plaso CSV files or raw l
 .. code-block:: bash
 
    recongraph [-h] -f FILE [-o OUTPUT] [-r RULES] [--export-csv [EXPORT_CSV]] [--export-sigma [EXPORT_SIGMA]] [--strict] [--keep-all-timestamps]
+              [--edge-order {time,file}] [--temporal-output TEMPORAL_OUTPUT]
 
 Arguments:
 ^^^^^^^^^^
@@ -20,6 +21,11 @@ Arguments:
 *   ``--export-sigma``: Export the full sigma-labeled DataFrame to a CSV file.
 *   ``--strict``: Disable flexible matching mode (enforce strict logsource validation).
 *   ``--keep-all-timestamps``: JSON Lines input only. Keep every timestamp row of an EVTX record instead of only ``Creation Time``.
+*   ``--edge-order {time,file}``: Order transitions by timestamp (default; ties keep row order, rows without a valid
+    timestamp stay right after the row they follow) or by input row order (the original behavior).
+*   ``--temporal-output``: Also write a GraphML with one edge per transition (``seq``, ``t_src``/``t_dst`` and their
+    ``_us`` epoch microseconds, ``delta_us``, ``src_row``/``dst_row``). The aggregate graph (``-o``) keeps ``weight`` and
+    adds ``first_seen``/``last_seen`` and ``delta_min_us``/``delta_median_us``/``delta_max_us``.
 
 Example:
 ^^^^^^^^

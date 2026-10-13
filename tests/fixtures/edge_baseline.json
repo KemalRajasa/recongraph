@@ -1,0 +1,238 @@
+{
+ "1/failed-login.csv|flexible": {
+  "nodes": [
+   "Execution Of Non-Existing File[high]",
+   "Publicly Accessible RDP Service[high]"
+  ],
+  "edges": [
+   [
+    "Execution Of Non-Existing File[high]",
+    "Execution Of Non-Existing File[high]",
+    823
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Publicly Accessible RDP Service[high]",
+    137
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Execution Of Non-Existing File[high]",
+    137
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Publicly Accessible RDP Service[high]",
+    903
+   ]
+  ]
+ },
+ "1/failed-login.csv|strict": {
+  "nodes": [],
+  "edges": []
+ },
+ "2/windows-firewall-disabled-evtx.csv|flexible": {
+  "nodes": [
+   "Driver Load From A Temporary Directory[high]",
+   "Execution Of Non-Existing File[high]",
+   "Potential WinAPI Calls Via CommandLine[high]",
+   "Process Execution From A Potentially Suspicious Folder[high]",
+   "Publicly Accessible RDP Service[high]"
+  ],
+  "edges": [
+   [
+    "Driver Load From A Temporary Directory[high]",
+    "Driver Load From A Temporary Directory[high]",
+    15
+   ],
+   [
+    "Driver Load From A Temporary Directory[high]",
+    "Execution Of Non-Existing File[high]",
+    9
+   ],
+   [
+    "Driver Load From A Temporary Directory[high]",
+    "Publicly Accessible RDP Service[high]",
+    8
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Driver Load From A Temporary Directory[high]",
+    12
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Execution Of Non-Existing File[high]",
+    1417
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Potential WinAPI Calls Via CommandLine[high]",
+    1
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Publicly Accessible RDP Service[high]",
+    82
+   ],
+   [
+    "Potential WinAPI Calls Via CommandLine[high]",
+    "Execution Of Non-Existing File[high]",
+    1
+   ],
+   [
+    "Potential WinAPI Calls Via CommandLine[high]",
+    "Potential WinAPI Calls Via CommandLine[high]",
+    1
+   ],
+   [
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    "Publicly Accessible RDP Service[high]",
+    1
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Driver Load From A Temporary Directory[high]",
+    5
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Execution Of Non-Existing File[high]",
+    85
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    1
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Publicly Accessible RDP Service[high]",
+    361
+   ]
+  ]
+ },
+ "2/windows-firewall-disabled-evtx.csv|strict": {
+  "nodes": [],
+  "edges": []
+ },
+ "3/4616-with-regex.csv|flexible": {
+  "nodes": [
+   "Antivirus - Ransomware Signature[critical]",
+   "Driver Load From A Temporary Directory[high]",
+   "Execution Of Non-Existing File[high]",
+   "Process Execution From A Potentially Suspicious Folder[high]",
+   "Publicly Accessible RDP Service[high]",
+   "Scheduled TaskCache Change by Uncommon Program[high]"
+  ],
+  "edges": [
+   [
+    "Antivirus - Ransomware Signature[critical]",
+    "Antivirus - Ransomware Signature[critical]",
+    5
+   ],
+   [
+    "Antivirus - Ransomware Signature[critical]",
+    "Execution Of Non-Existing File[high]",
+    1
+   ],
+   [
+    "Driver Load From A Temporary Directory[high]",
+    "Driver Load From A Temporary Directory[high]",
+    4
+   ],
+   [
+    "Driver Load From A Temporary Directory[high]",
+    "Execution Of Non-Existing File[high]",
+    4
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Antivirus - Ransomware Signature[critical]",
+    1
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Driver Load From A Temporary Directory[high]",
+    1
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Execution Of Non-Existing File[high]",
+    623
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    52
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Publicly Accessible RDP Service[high]",
+    73
+   ],
+   [
+    "Execution Of Non-Existing File[high]",
+    "Scheduled TaskCache Change by Uncommon Program[high]",
+    2
+   ],
+   [
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    "Execution Of Non-Existing File[high]",
+    45
+   ],
+   [
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    106
+   ],
+   [
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    "Publicly Accessible RDP Service[high]",
+    8
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Driver Load From A Temporary Directory[high]",
+    3
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Execution Of Non-Existing File[high]",
+    79
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Process Execution From A Potentially Suspicious Folder[high]",
+    1
+   ],
+   [
+    "Publicly Accessible RDP Service[high]",
+    "Publicly Accessible RDP Service[high]",
+    990
+   ],
+   [
+    "Scheduled TaskCache Change by Uncommon Program[high]",
+    "Execution Of Non-Existing File[high]",
+    1
+   ],
+   [
+    "Scheduled TaskCache Change by Uncommon Program[high]",
+    "Publicly Accessible RDP Service[high]",
+    1
+   ]
+  ]
+ },
+ "3/4616-with-regex.csv|strict": {
+  "nodes": [
+   "Relevant Anti-Virus Signature Keywords In Application Log[high]"
+  ],
+  "edges": [
+   [
+    "Relevant Anti-Virus Signature Keywords In Application Log[high]",
+    "Relevant Anti-Virus Signature Keywords In Application Log[high]",
+    1
+   ]
+  ]
+ }
+}

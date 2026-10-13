@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -286,20 +285,15 @@ CSV_BASELINE = {
 }
 
 
-def _csv_counts(args):
-    csv, flexible, out = args
-    df = SigmaLabel(str(REPO / "dataset" / csv), str(SIGMA / "rules"), flexible_mode=flexible).run()
-    graph = EdgeGraph(df)
-    graph.run_all(graph_output=out)
-    return len(df), int((df["sigma"] != "").sum()), graph.G.number_of_nodes(), graph.G.number_of_edges()
-
-
 @pytest.fixture(scope="module")
-def csv_results(tmp_path_factory):
+def csv_results(labeled_sample_csvs, tmp_path_factory):
     out = tmp_path_factory.mktemp("regression")
-    jobs = [(csv, flexible, str(out / f"{i}.graphml")) for i, (csv, flexible) in enumerate(CSV_BASELINE)]
-    with ProcessPoolExecutor() as pool:
-        return dict(zip(CSV_BASELINE, pool.map(_csv_counts, jobs)))
+    results = {}
+    for i, (key, df) in enumerate(labeled_sample_csvs.items()):
+        graph = EdgeGraph(df, edge_order="file")
+        graph.run_all(graph_output=str(out / f"{i}.graphml"))
+        results[key] = (len(df), int((df["sigma"] != "").sum()), graph.G.number_of_nodes(), graph.G.number_of_edges())
+    return results
 
 
 @pytest.mark.skipif(not (SIGMA / "rules").exists(), reason="sigma rules not found next to recongraph")
