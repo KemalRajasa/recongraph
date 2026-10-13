@@ -1,4 +1,5 @@
 import csv
+import logging
 import re
 import yaml
 from pathlib import Path
@@ -14,6 +15,8 @@ import re
 import yaml
 from typing import List, Dict, Any
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class SigmaMatcher:
@@ -37,6 +40,7 @@ class SigmaMatcher:
         self.detection = self.rule_data.get('detection', {})
         self.logsource = self.rule_data.get('logsource', {})
         self.flexible_mode = flexible_mode
+        self._condition_warned = False
 
     def match(self, log_entry: Dict[str, Any]) -> bool:
         """
@@ -289,11 +293,15 @@ class SigmaMatcher:
         if "any of them" in condition: condition = condition.replace("any of them", str(any(selections.values())))
         
         for key, result in selections.items():
-            condition = re.sub(rf"\\b{re.escape(key)}\\b", str(result), condition)
-        
+            condition = re.sub(rf"\b{re.escape(key)}\b", str(result), condition)
+
         try:
             return bool(eval(condition))
         except Exception:
+            if not self._condition_warned:
+                self._condition_warned = True
+                logger.warning("Cannot evaluate condition of rule '%s': %r; falling back to any(selections)",
+                               self.title, self.detection.get('condition', condition))
             return any(selections.values())
 
 

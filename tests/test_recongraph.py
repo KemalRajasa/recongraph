@@ -136,3 +136,36 @@ def test_graphml_contains_level_key(tmp_path, dummy_df):
     xml = output_file.read_text(encoding="utf-8")
     assert 'attr.name="level"' in xml
     assert ">critical<" in xml
+
+
+def _matcher(tmp_path, condition):
+    import yaml
+    rule = tmp_path / "cond.yml"
+    rule.write_text(yaml.safe_dump({'title': 'Cond Rule', 'detection': {'condition': condition}}), encoding="utf-8")
+    return SigmaMatcher(str(rule))
+
+
+@pytest.mark.parametrize("condition, selections, expected", [
+    ("selection and not filter", {'selection': True, 'filter': True}, False),
+    ("selection and not filter", {'selection': False, 'filter': True}, False),
+    ("selection and not filter", {'selection': True, 'filter': False}, True),
+    ("selection1 and selection2", {'selection1': True, 'selection2': False}, False),
+    ("selection1 and selection2", {'selection1': True, 'selection2': True}, True),
+    ("1 of selection_* and not filter", {'selection_a': True, 'selection_b': False, 'filter': True}, False),
+    ("1 of selection_* and not filter", {'selection_a': False, 'selection_b': True, 'filter': False}, True),
+    ("1 of selection_* and not filter", {'selection_a': False, 'selection_b': False, 'filter': False}, False),
+    # 'selection' is a prefix of 'selection_filter'; dict order must not matter
+    ("selection and not selection_filter", {'selection': True, 'selection_filter': True}, False),
+    ("selection and not selection_filter", {'selection_filter': False, 'selection': True}, True),
+    ("sel and not sel2", {'sel2': True, 'sel': True}, False),
+])
+def test_evaluate_condition(tmp_path, condition, selections, expected):
+    assert _matcher(tmp_path, condition)._evaluate_condition(condition, selections) is expected
+
+
+def test_evaluate_condition_warns_on_unparsable(tmp_path, caplog):
+    condition = "selection | count() > 5"
+    with caplog.at_level("WARNING"):
+        result = _matcher(tmp_path, condition)._evaluate_condition(condition, {'selection': True})
+    assert result is True  # fallback stays any(selections)
+    assert "Cond Rule" in caplog.text and condition in caplog.text
