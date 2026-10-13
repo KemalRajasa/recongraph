@@ -915,7 +915,7 @@ class ReconGraph(object):
         print("\n[Phase 2] Edge Graph Construction")
         reconstruction = EdgeGraph(df_labeled)
         reconstruction.run_all(graph_output=graph_output, csv_output=csv_output)
-        print("\n[✓] Pipeline Completed Successfully")
+        print("\n[+] Pipeline Completed Successfully")
 
 
 def main():

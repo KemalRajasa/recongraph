@@ -6,3 +6,4 @@ recongraph.egg-info/
 dist/
 venv/
 sample/
+tmp_out/
