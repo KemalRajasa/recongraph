@@ -12,7 +12,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 GENERIC_COLUMNS = ["datetime", "timestamp_desc", "message", "parser", "display_name", "data_type", "log_type"]
-SYSTEM_FIELDS = ["EventID", "Channel", "Provider_Name", "Computer", "EventRecordID", "Security_UserID"]
+SYSTEM_FIELDS = ["EventID", "Channel", "Provider_Name", "Computer", "EventRecordID", "Security_UserID", "Level"]
 _XML_ILLEGAL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
 
 # EVTX Channel -> Sigma `service:` (names as used in sigma/rules/windows/builtin).
@@ -121,6 +121,7 @@ def _parse_event_xml(xml: str, where: str) -> tuple[dict, str | None]:
             "Computer": system.findtext("{*}Computer"),
             "EventRecordID": system.findtext("{*}EventRecordID"),
             "Security_UserID": security.get("UserID") if security is not None else None,
+            "Level": system.findtext("{*}Level"),
         }
     reserved = set(SYSTEM_FIELDS) | set(GENERIC_COLUMNS)
 
@@ -136,14 +137,14 @@ def _parse_event_xml(xml: str, where: str) -> tuple[dict, str | None]:
     for data in root.iterfind("{*}EventData/{*}Data"):
         name = data.get("Name")
         if not name:
-            unnamed.append(data.text)
+            unnamed.append(data.text or "")
             name = f"param{len(unnamed)}"
-        add(name, data.text)
+        add(name, data.text or "")
     if unnamed:
-        add("Data", "\n".join(v or "" for v in unnamed))
+        add("Data", "\n".join(unnamed))
     for el in root.iterfind("{*}UserData//*"):
         if len(el) == 0:
-            add(_local(el.tag), el.text)
+            add(_local(el.tag), el.text or "")
     return fields, root.findtext("{*}UserData//{*}Channel")
 
 

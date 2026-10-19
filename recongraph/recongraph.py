@@ -44,6 +44,7 @@ class SigmaMatcher:
         self.logsource = self.rule_data.get('logsource', {})
         self.flexible_mode = flexible_mode
         self._condition_warned = False
+        self._negated_fields = self._negated_selection_fields()
 
     def match(self, log_entry: Dict[str, Any]) -> bool:
         """
@@ -67,34 +68,94 @@ class SigmaMatcher:
                 continue
             selections[key.lower()] = self._match_selection(value, log_entry)
     
+        if not self.flexible_mode:
+            # a negated selection the entry has no fields for cannot vouch for a match: treat it as matched
+            selections.update(dict.fromkeys(self._unavailable_negations(log_entry), True))
+    
         return self._evaluate_condition(condition, selections)
 
     def _check_logsource(self, log_entry: Dict[str, Any]) -> bool:
         """
         Check if log_entry match with the rule's expected logsource.
 
-        This function validates whether the log entry originates from the log source 
-        specified in the Sigma rule (category, product, service).
+        This function validates whether the log entry originates from the log source
+        specified in the Sigma rule: every category, product and service the rule
+        names must appear as an exact (case-insensitive) element of ``log_type``.
         """
-        expected_category = self.logsource.get("category", "").lower()
-        expected_product = self.logsource.get("product", "").lower()
-        expected_service = self.logsource.get("service", "").lower()
-        
         log_types = log_entry.get("log_type", [])
         if isinstance(log_types, str):
             log_types = [log_types]
-        
-        log_types_lower = [lt.lower() for lt in log_types]
+        log_types_lower = {lt.lower() for lt in log_types}
 
-        if expected_category and not any(expected_category in lt for lt in log_types_lower):
-            return False
-            
-        if expected_product:
-            if expected_service:
-                if not any(expected_service in lt for lt in log_types_lower):
-                    if not any(expected_product in lt for lt in log_types_lower):
-                        return False
-        return True
+        return all(str(self.logsource[key]).lower() in log_types_lower
+                   for key in ("category", "product", "service") if self.logsource.get(key))
+
+    def _negated_groups(self, names: List[str]) -> List[List[str]]:
+        """
+        Selections the condition negates, grouped the way they are negated.
+
+        ``not 1 of X*`` / ``not all of X*`` / ``not 1 of them`` give one group holding every
+        matching selection; ``not X`` gives a one-selection group; each reference inside a
+        ``not ( ... )`` is its own group. Double negation (``not (a and not b)``) still counts
+        ``b`` as negated.
+        """
+        condition = self.detection.get('condition', '')
+        if isinstance(condition, list):
+            condition = " or ".join(map(str, condition))
+        tokens = re.findall(r"[()]|[\w*]+", str(condition).lower())
+        groups, group_negated, pending_not = [], [False], False
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+            if token == "not":
+                pending_not = True
+            elif token == "(":
+                group_negated.append(group_negated[-1] or pending_not)
+                pending_not = False
+            elif token == ")":
+                if len(group_negated) > 1:
+                    group_negated.pop()
+            elif token not in ("and", "or"):
+                if i + 2 < len(tokens) and tokens[i + 1] == "of":
+                    target, i = tokens[i + 2], i + 2
+                    refs = names if target == "them" else (
+                        [n for n in names if n.startswith(target[:-1])] if target.endswith("*") else [target])
+                else:
+                    refs = [token]
+                group = [r for r in refs if r in names]
+                if group and (pending_not or group_negated[-1]):
+                    groups.append(group)
+                pending_not = False
+            i += 1
+        return groups
+
+    def _negated_selection_fields(self) -> List[tuple]:
+        """[(field-based selections of a negated group, field names they reference)]; keyword-only selections are skipped."""
+        fields = {}
+        for key, value in self.detection.items():
+            if key == 'condition':
+                continue
+            maps = value if isinstance(value, list) else [value]
+            refs = {f.split('|')[0] for m in maps if isinstance(m, dict) for f in m if not str(f).startswith('|')}
+            if refs:
+                fields[key.lower()] = refs
+        names = [k.lower() for k in self.detection if k != 'condition']
+        negated = []
+        for group in self._negated_groups(names):
+            members = [n for n in group if n in fields]
+            if members:
+                negated.append((members, set().union(*(fields[n] for n in members))))
+        return negated
+
+    def _unavailable_negations(self, log_entry: Dict[str, Any]) -> List[str]:
+        """Selections of negated groups whose fields are all absent from the entry (an empty value counts as present, a fallback does not)."""
+        return [name for members, refs in self._negated_fields
+                if not any(log_entry.get(f) is not None for f in refs) for name in members]
+
+    @staticmethod
+    def _is_null(pattern) -> bool:
+        """Sigma `null` (YAML null, or the literal 'null'): the field is missing or empty."""
+        return pattern is None or str(pattern).lower() == "null"
 
     def _match_selection(self, selection, log_entry: Dict) -> bool:
         """
@@ -141,24 +202,24 @@ class SigmaMatcher:
             
             log_value = self._get_field_value(log_entry, field_name)
 
-            null_check_needed = any(str(p).lower() == "null" for p in patterns)
+            null_check_needed = any(self._is_null(p) for p in patterns)
             if not log_value and not null_check_needed:
                 return False
                 
             null_match_found = False
             for p in patterns:
-                if str(p).lower() == "null":
+                if self._is_null(p):
                     if log_value == "":
                         null_match_found = True
                     else:
                         return False
                 
             if null_match_found:
-                 return True
+                 continue
 
             pattern_matched = False
             for p in patterns:
-                if str(p).lower() == "null": continue
+                if self._is_null(p): continue
                 if self._match_value(log_value, str(p).lower(), modifier):
                     pattern_matched = True
                     break
@@ -447,6 +508,7 @@ class SigmaLabel(object):
             self._extract_http_fields(desc, parsed)
             
         if 'auth.log' in filename:
+            # TODO(phase 3): also add 'auth'; strict logsource matching now rejects Sigma rules with service: auth
             log_types.extend(['linux', 'sshd'])
             if 'pam' in lower_desc: log_types.append('pam')
         if 'syslog' in filename:
@@ -573,7 +635,7 @@ class SigmaLabel(object):
 
             if input_format == "plaso_jsonl" and isinstance(row.get('log_type'), list):
                 features = {"log_type": row['log_type']}
-                log_entry = {k: row[k] for k in event_fields if isinstance(row[k], str) and row[k]}
+                log_entry = {k: row[k] for k in event_fields if isinstance(row[k], str)}
                 log_entry.update(desc=desc, log_type=row['log_type'])
             else:
                 features = self.detect_log_type(str(desc), str(fname))

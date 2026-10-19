@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -6,7 +7,8 @@ import pytest
 from recongraph.recongraph import SigmaLabel
 
 REPO = Path(__file__).parents[1]
-SIGMA_RULES = REPO.parent / "sigma" / "rules"
+SIGMA_RULES = Path(os.environ.get("SIGMA_RULES_PATH") or REPO.parent / "sigma" / "rules")
+SIGMA = SIGMA_RULES.parent
 SAMPLE_CSV_CONFIGS = [(csv, flexible)
                       for csv in ("1/failed-login.csv", "2/windows-firewall-disabled-evtx.csv", "3/4616-with-regex.csv")
                       for flexible in (True, False)]

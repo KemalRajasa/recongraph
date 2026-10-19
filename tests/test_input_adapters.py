@@ -12,11 +12,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from recongraph.input_adapters import (CHANNEL_SERVICES, EVENT_CATEGORIES, detect_input_format,
                                        load_plaso_jsonl)
 from recongraph.recongraph import EdgeGraph, SigmaLabel
+from tests.conftest import SIGMA
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE = FIXTURES / "plaso_sample.jsonl"
 REPO = Path(__file__).parents[1]
-SIGMA = REPO.parent / "sigma"
 
 
 @pytest.fixture(scope="module")
@@ -75,6 +75,49 @@ def test_unnamed_data_becomes_params_and_joined_data(sample):
 
 def test_named_eventdata_has_no_joined_data(sample):
     assert pd.isna(_by_record_id(sample, "7")["Data"])
+
+
+EVENT_NS = 'xmlns="http://schemas.microsoft.com/win/2004/08/events/event"'
+
+
+def _event_xml(provider, event_id, channel, level, event_data):
+    return (f'<Event {EVENT_NS}><System><Provider Name="{provider}"/><EventID>{event_id}</EventID><Level>{level}</Level>'
+            f'<EventRecordID>1</EventRecordID><Channel>{channel}</Channel><Computer>host01</Computer></System>'
+            f'<EventData>{event_data}</EventData></Event>')
+
+
+def _write_record(path, xml, message="[1] synthetic"):
+    record = {"data_type": "windows:evtx:record", "parser": "winevtx", "timestamp": 1700000000000000,
+              "timestamp_desc": "Creation Time", "message": message, "display_name": "OS:/data/synthetic.evtx",
+              "xml_string": xml}
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    return path
+
+
+def test_empty_data_is_kept_and_differs_from_absent(tmp_path):
+    xml = _event_xml("Microsoft-Windows-Sysmon", 8, "Microsoft-Windows-Sysmon/Operational", 4,
+                     r'<Data Name="SourceImage">C:\a.exe</Data><Data Name="StartFunction"/><Data Name="StartModule"></Data>')
+    df = load_plaso_jsonl(_write_record(tmp_path / "e.jsonl", xml))
+    row = df.iloc[0]
+    assert (row["StartFunction"], row["StartModule"], row["SourceImage"]) == ("", "", r"C:\a.exe")
+    assert "NewThreadId" not in df.columns
+    assert row["Level"] == "4"
+
+
+AV_RULE = SIGMA / "rules" / "windows" / "builtin" / "application" / "Other" / "win_av_relevant_match.yml"
+
+
+@pytest.mark.skipif(not AV_RULE.exists(), reason="sigma rules not found (set SIGMA_RULES_PATH)")
+@pytest.mark.parametrize("level, expected", [("2", "Relevant Anti-Virus Signature Keywords In Application Log[high]"),
+                                             ("4", "")])  # the rule filters out Level 4 (Information)
+def test_av_rule_uses_level_from_adapter(tmp_path, level, expected):
+    message = "[1116] Threat HackTool:Win32/Mimikatz detected"
+    xml = _event_xml("Some AV", 1116, "Application", level, f"<Data>{message}</Data>")
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / AV_RULE.name).write_bytes(AV_RULE.read_bytes())
+    df = SigmaLabel(str(_write_record(tmp_path / "av.jsonl", xml, message)), str(rules), flexible_mode=False).run()
+    assert df["sigma"].tolist() == [expected]
 
 
 def test_nested_userdata_and_system_priority(sample):
@@ -281,7 +324,8 @@ CSV_BASELINE = {
     ("2/windows-firewall-disabled-evtx.csv", True): (2000, 2000, 5, 14),
     ("2/windows-firewall-disabled-evtx.csv", False): (2000, 0, 0, 0),
     ("3/4616-with-regex.csv", True): (2001, 2001, 6, 19),
-    ("3/4616-with-regex.csv", False): (2001, 2, 1, 1),
+    # strict: the 2 "Relevant Anti-Virus Signature Keywords In Application Log" rows were a logsource false positive
+    ("3/4616-with-regex.csv", False): (2001, 0, 0, 0),
 }
 
 
