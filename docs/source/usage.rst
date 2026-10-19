@@ -130,6 +130,31 @@ You can integrate ReconGraph into your own forensic analysis scripts using the u
        sigma_output='labeled_source.csv'
    )
 
+Reconstructing Paths Between Events
+-----------------------------------
+
+``python -m recongraph.reconstruct`` lists the paths from a source event ``s`` to a destination event ``d`` with at
+most ``k`` edges (``--max-len``, default 8) in a graph written with ``--temporal-output``:
+
+*   ``dfs``: simple paths in the aggregate graph (``networkx.all_simple_paths``); no node repeats and time is ignored.
+*   ``time``: time-respecting walks ``e1..em`` over the temporal graph: ``e1`` leaves ``s``, ``em`` arrives at ``d``,
+    ``t_dst(e_i) <= t_src(e_i+1)`` and, with ``--max-gap W``, ``t_src(e_i+1) - t_dst(e_i) <= W``. Nodes may repeat, a
+    transition is used at most once, and transitions without timestamps are skipped.
+*   ``replay``: consecutive transitions (``seq(e_i+1) = seq(e_i) + 1``), i.e. the order the log shows.
+*   ``compare``: all three. A DFS path is *feasible* when some time-respecting walk visits the same node sequence,
+    otherwise *temporally impossible*; the share of impossible DFS paths is reported.
+
+.. code-block:: bash
+
+   python -m recongraph.reconstruct --temporal temporal.graphml --agg agg.graphml \
+       --src "Base64 Encoded PowerShell" --dst "Malware Callback" --mode compare --max-len 8 --max-gap 60s --out paths.json
+
+``--src``/``--dst`` accept a node id, an exact label or a unique label substring. ``--cap`` limits the number of
+paths per method and sets ``truncated`` when reached. The functions (``dfs_paths``, ``time_respecting_paths``,
+``replay_paths``, ``compare``) also accept graphs loaded from an ``EdgeGraph`` via ``load_graphs(edge_graph)``.
+Neo4j equivalents (import with ``apoc.import.graphml`` and ``{storeNodeIds: true, defaultRelationshipType: 'NEXT'}``)
+are in ``docs/cypher/``.
+
 Running Tests
 -------------
 

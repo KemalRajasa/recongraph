@@ -287,6 +287,28 @@ The tool generates the following files:
 - **Sigma Labeled CSV** (`<filename>_sigma_labeled.csv`, with `--export-sigma`):
   The input log file augmented with matching Sigma rule titles and severity levels.
 
+## Reconstructing Paths Between Events
+
+`python -m recongraph.reconstruct` lists the paths between two events of a graph
+written with `--temporal-output` (the aggregate graph from `-o` is optional):
+
+```bash
+recongraph -f timeline.jsonl -r ./sigma/rules/windows --strict -o agg.graphml --temporal-output temporal.graphml
+python -m recongraph.reconstruct --temporal temporal.graphml --agg agg.graphml \
+       --src "Base64 Encoded PowerShell" --dst "Malware Callback" --mode compare --max-len 8 --max-gap 60s
+```
+
+| Mode | Paths |
+|------|-------|
+| `dfs` | Simple paths in the aggregate graph (no repeated node, time ignored): the classic baseline. |
+| `time` | Time-respecting walks: each transition starts no earlier than the previous one ended (and at most `--max-gap` later); events may repeat, a transition is used once. |
+| `replay` | Consecutive transitions as they appear in the log (`seq`, `seq + 1`, ...). |
+| `compare` | All three, plus how many DFS paths are temporally impossible (no time-respecting walk visits the same events). |
+
+`--src`/`--dst` take a node id, an exact label or a unique label substring; `--cap`
+limits the number of paths per method (`truncated` is reported), `--out` writes JSON.
+Equivalent Neo4j queries are in [`docs/cypher/`](docs/cypher/).
+
 ## Visualizing the Graph
 
 The repository ships with a standalone, single-file web visualizer at
