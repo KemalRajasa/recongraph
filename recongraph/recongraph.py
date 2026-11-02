@@ -1,4 +1,7 @@
+import base64
 import csv
+import ipaddress
+import itertools
 import logging
 import re
 import yaml
@@ -20,6 +23,35 @@ from pathlib import Path
 from recongraph.input_adapters import GENERIC_COLUMNS, detect_input_format, load_plaso_jsonl
 
 logger = logging.getLogger(__name__)
+
+_WINDASH = ("-", "/", "\u2013", "\u2014", "\u2015")  # Sigma windash: -, /, en dash, em dash, horizontal bar
+
+
+def _windash(pattern: str) -> List[str]:
+    """Every combination of the windash characters for each dash/slash that starts a command-line flag."""
+    pieces = re.split(r"\B[-/]\b", pattern)
+    return [pieces[0] + "".join(d + p for d, p in zip(dashes, pieces[1:]))
+            for dashes in itertools.product(_WINDASH, repeat=len(pieces) - 1)]
+
+
+def _base64(pattern: str) -> List[str]:
+    return [base64.b64encode(pattern.encode()).decode()]
+
+
+def _base64offset(pattern: str) -> List[str]:
+    """The three base64 renderings of pattern at byte offsets 0/1/2 of a longer string (as in pySigma)."""
+    data = pattern.encode()
+    return [base64.b64encode(b" " * i + data).decode()[(0, 2, 3)[i]:(None, -3, -2)[(len(data) + i) % 3]]
+            for i in range(3)]
+
+
+_TRANSFORMS = {"windash": _windash, "base64": _base64, "base64offset": _base64offset}
+SUPPORTED_MODIFIERS = frozenset({"contains", "startswith", "endswith", "all", "re", "i", "m", "s", "cidr", "fieldref",
+                                 "exists", "lt", "lte", "gt", "gte", *_TRANSFORMS})
+
+
+class UnsupportedModifierError(ValueError):
+    """A rule uses a field modifier the matcher does not implement."""
 
 
 class SigmaMatcher:
@@ -45,6 +77,17 @@ class SigmaMatcher:
         self.flexible_mode = flexible_mode
         self._condition_warned = False
         self._negated_fields = self._negated_selection_fields()
+        unsupported = sorted({m for key in self._field_keys() for m in str(key).split("|")[1:]} - SUPPORTED_MODIFIERS)
+        if unsupported:
+            raise UnsupportedModifierError(f"rule '{self.title}' uses unsupported modifier(s) {unsupported}")
+
+    def _field_keys(self):
+        """Every ``Field|modifier`` key of every map-shaped selection."""
+        for key, value in self.detection.items():
+            if key != 'condition':
+                for item in (value if isinstance(value, list) else [value]):
+                    if isinstance(item, dict):
+                        yield from item
 
     def match(self, log_entry: Dict[str, Any]) -> bool:
         """
@@ -56,8 +99,9 @@ class SigmaMatcher:
         if not log_entry:
             return False
             
-        if not self.flexible_mode and self.logsource:
-            if not self._check_logsource(log_entry):
+        if self.logsource:
+            # flexible mode only checks the product (a Linux rule must not match a Windows log)
+            if not self._check_logsource(log_entry, ("product",) if self.flexible_mode else ("category", "product", "service")):
                 return False    
     
         condition = self.detection.get('condition', '').lower().strip()
@@ -68,27 +112,25 @@ class SigmaMatcher:
                 continue
             selections[key.lower()] = self._match_selection(value, log_entry)
     
-        if not self.flexible_mode:
-            # a negated selection the entry has no fields for cannot vouch for a match: treat it as matched
-            selections.update(dict.fromkeys(self._unavailable_negations(log_entry), True))
+        # a negated selection the entry has no fields for cannot vouch for a match: treat it as matched
+        selections.update(dict.fromkeys(self._unavailable_negations(log_entry), True))
     
         return self._evaluate_condition(condition, selections)
 
-    def _check_logsource(self, log_entry: Dict[str, Any]) -> bool:
+    def _check_logsource(self, log_entry: Dict[str, Any], keys=("category", "product", "service")) -> bool:
         """
         Check if log_entry match with the rule's expected logsource.
 
         This function validates whether the log entry originates from the log source
-        specified in the Sigma rule: every category, product and service the rule
-        names must appear as an exact (case-insensitive) element of ``log_type``.
+        specified in the Sigma rule: every one of ``keys`` (category, product, service)
+        the rule names must appear as an exact (case-insensitive) element of ``log_type``.
         """
         log_types = log_entry.get("log_type", [])
         if isinstance(log_types, str):
             log_types = [log_types]
         log_types_lower = {lt.lower() for lt in log_types}
 
-        return all(str(self.logsource[key]).lower() in log_types_lower
-                   for key in ("category", "product", "service") if self.logsource.get(key))
+        return all(str(self.logsource[key]).lower() in log_types_lower for key in keys if self.logsource.get(key))
 
     def _negated_groups(self, names: List[str]) -> List[List[str]]:
         """
@@ -197,37 +239,35 @@ class SigmaMatcher:
                         return True
                 return False
 
-            field_name, modifier = self._parse_field(field)
+            field_name, modifiers = self._parse_field(field)
             patterns = patterns if isinstance(patterns, list) else [patterns]
-            
-            log_value = self._get_field_value(log_entry, field_name)
-
-            null_check_needed = any(self._is_null(p) for p in patterns)
-            if not log_value and not null_check_needed:
-                return False
-                
-            null_match_found = False
-            for p in patterns:
-                if self._is_null(p):
-                    if log_value == "":
-                        null_match_found = True
-                    else:
-                        return False
-                
-            if null_match_found:
-                 continue
-
-            pattern_matched = False
-            for p in patterns:
-                if self._is_null(p): continue
-                if self._match_value(log_value, str(p).lower(), modifier):
-                    pattern_matched = True
-                    break
-            
-            if not pattern_matched:
+            if not self._match_field(log_entry, field_name, modifiers, patterns):
                 return False
 
         return True
+
+    def _match_field(self, log_entry: Dict, field_name: str, modifiers: List[str], patterns: list) -> bool:
+        """
+        Match one ``Field|modifier|...`` key against its patterns.
+
+        Transform modifiers (windash, base64, base64offset) expand each pattern into variants first;
+        a pattern matches when one of its variants matches. ``all`` requires every pattern to match,
+        otherwise one is enough. A null pattern matches a missing or empty field.
+        """
+        value = self._get_field_value(log_entry, field_name)
+        if "exists" in modifiers:
+            return all(str(p).lower() not in ("false", "no", "0") for p in patterns) == (value is not None)
+        results = []
+        for p in patterns:
+            if self._is_null(p):
+                results.append(value is None or value == "")
+                continue
+            variants = [str(p)]
+            for m in modifiers:
+                if m in _TRANSFORMS:
+                    variants = [v for x in variants for v in _TRANSFORMS[m](x)]
+            results.append(value is not None and any(self._match_value(value, v, modifiers, log_entry) for v in variants))
+        return all(results) if "all" in modifiers else any(results)
 
     def _match_simple_pattern(self, pattern: str, search_fields: List[str]) -> bool:
         """
@@ -265,15 +305,16 @@ class SigmaMatcher:
         
         return search_fields if search_fields else ['']
 
-    def _get_field_value(self, log_entry: Dict, field_name: str) -> str:
+    def _get_field_value(self, log_entry: Dict, field_name: str):
         """
-        Get the value of a field from the log entry.
+        Get the value of a field from the log entry, or None when it is absent.
 
-        This function retrieves the value of a specific field from the log entry,
-        handling field mapping (e.g., 'uri' -> 'c-uri') and normalizing to lowercase.
+        This function retrieves the raw value of a specific field from the log entry,
+        handling field mapping (e.g., 'uri' -> 'c-uri'). Only strict mode maps
+        CommandLine/command onto the whole message.
         """
         if field_name in log_entry:
-            return str(log_entry[field_name]).lower()
+            return None if log_entry[field_name] is None else str(log_entry[field_name])
         
         field_mappings = {
             'uri': 'c-uri',
@@ -290,36 +331,54 @@ class SigmaMatcher:
         }
 
         mapped_field = field_mappings.get(field_name.lower())
+        if self.flexible_mode and field_name.lower() in ('commandline', 'command'):
+            mapped_field = None  # flexible mode falls back to the message only for keyword selections
         if mapped_field and mapped_field in log_entry:
-            return str(log_entry[mapped_field]).lower()
+            return str(log_entry[mapped_field])
         
-        if self.flexible_mode and 'desc' in log_entry:
-            return str(log_entry['desc']).lower()
-        
-        return ''
+        return None
 
     def _parse_field(self, field: str):
         """
-        Parse a field string into a tuple of (field_name, modifier).
+        Parse a field string into (field_name, [modifier, ...]).
 
-        This function splits a field string like 'fieldname|modifier' into its components.
+        This function splits a field string like 'fieldname|contains|all' into the field
+        name and its whole modifier chain.
         """
-        if "|" not in field:
-            return (field, None)
-        parts = field.split("|")
-        return parts[0], parts[-1]
+        name, *modifiers = str(field).split("|")
+        return name, modifiers
 
-    def _match_value(self, value: str, pattern: str, modifier: str = None):
+    def _match_value(self, value: str, pattern: str, modifiers: List[str], log_entry: Dict = None) -> bool:
         """
-        Match a pattern against a value based on the modifier.
+        Match a pattern against a field value under a modifier chain.
 
-        This function applies the specified modifier (e.g., 'contains', 'startswith')
-        to match the pattern against the value.
+        String comparisons are case-insensitive, except after base64/base64offset and for
+        ``re`` without ``i`` (Sigma semantics). cidr, lt/lte/gt/gte and fieldref do not match
+        values they cannot interpret.
         """
-        if modifier == "contains": return pattern in value
-        if modifier == "startswith": return value.startswith(pattern)
-        if modifier == "endswith": return value.endswith(pattern)
-        if modifier == "re": return bool(re.search(pattern, value))
+        if "re" in modifiers:
+            flags = sum(f for m, f in (("i", re.IGNORECASE), ("m", re.MULTILINE), ("s", re.DOTALL)) if m in modifiers)
+            return bool(re.search(pattern, value, flags))
+        if "cidr" in modifiers:
+            try:
+                return ipaddress.ip_address(value.strip()) in ipaddress.ip_network(pattern, strict=False)
+            except ValueError:
+                return False
+        for m, compare in (("lt", float.__lt__), ("lte", float.__le__), ("gt", float.__gt__), ("gte", float.__ge__)):
+            if m in modifiers:
+                try:
+                    return compare(float(value), float(pattern))
+                except ValueError:
+                    return False
+        if "fieldref" in modifiers:
+            pattern = self._get_field_value(log_entry or {}, pattern)
+            if pattern is None:
+                return False
+        if not ({"base64", "base64offset"} & set(modifiers)):
+            value, pattern = value.lower(), pattern.lower()
+        if "contains" in modifiers: return pattern in value
+        if "startswith" in modifiers: return value.startswith(pattern)
+        if "endswith" in modifiers: return value.endswith(pattern)
         return value == pattern
 
     def _evaluate_condition(self, condition: str, selections: Dict[str, bool]) -> bool:
@@ -403,7 +462,8 @@ class SigmaRulesLoader:
         print(f"- Loading Sigma Rules from: {self.rules_dir} (Mode: {mode_str})")
         
         loaded_count = 0
-        for rule_file in rules_path.glob('**/*.yml'):
+        self.skipped = []
+        for rule_file in sorted(rules_path.glob('**/*.yml')):
             try:
                 matcher = SigmaMatcher(str(rule_file), flexible_mode=self.flexible_mode)
                 self.matchers.append({
@@ -412,10 +472,15 @@ class SigmaRulesLoader:
                     'level': matcher.level,
                 })
                 loaded_count += 1
+            except UnsupportedModifierError as e:
+                logger.warning("Skipping %s: %s", rule_file.name, e)
+                self.skipped.append(str(e))
             except Exception:
                 pass
         
         print(f"- Total rules loaded: {loaded_count} rules")
+        if self.skipped:
+            print(f"- Skipped {len(self.skipped)} rules with unsupported modifiers")
 
     def check_row(self, parsed_row: Dict[str, Any]) -> List[Dict[str, str]]:
         """
@@ -440,26 +505,19 @@ class SigmaRulesLoader:
 
         This function parses a string of matched Sigma rules (formatted as 
         'Title[Severity] | Title[Severity]') and determines the highest priority
-        match based on severity level.
+        match based on severity level. Ties go to the alphabetically first label, so the
+        result does not depend on rule load order (rules with the same title and level
+        produce the same label anyway).
         """
         if not sigma_value or not sigma_value.strip():
             return ""
 
         items = [s.strip() for s in sigma_value.split("|")]
         priority = {"critical": 5, "high": 4, "medium": 3, "low": 2, "informational": 1}
-
-        best_item = None
-        best_score = 0
-
-        for item in items:
-            if "[" in item and "]" in item:
-                severity = item[item.rfind("[")+1 : item.rfind("]")].lower().strip()
-                score = priority.get(severity, 0)
-                if score > best_score:
-                    best_score = score
-                    best_item = item
-        
-        return best_item or ""
+        scored = [(priority.get(item[item.rfind("[") + 1:item.rfind("]")].lower().strip(), 0), item)
+                  for item in items if "[" in item and "]" in item]
+        best = max((score for score, _ in scored), default=0)
+        return min(item for score, item in scored if score == best) if best else ""
 
 
 class SigmaLabel(object):
@@ -651,15 +709,12 @@ class SigmaLabel(object):
                 }
 
             matches = rules_loader.check_row(log_entry)
-            
-            if matches:
-                detection_str = " | ".join([f"{m['rule_title']}[{m['rule_level']}]" for m in matches])
-            else:
-                detection_str = ""
+            detection_str = " | ".join(sorted({f"{m['rule_title']}[{m['rule_level']}]" for m in matches}))
 
             new_row = row.to_dict()
             new_row['logsource'] = str(features['log_type'])
             new_row['sigma'] = rules_loader.extract_sigma_priority(detection_str)
+            new_row['sigma_all'] = detection_str
             processed_rows.append(new_row)
 
         return pd.DataFrame(processed_rows)
@@ -918,7 +973,7 @@ class EdgeGraph(object):
         """Build a MultiDiGraph with the aggregate graph's nodes and one edge per transition."""
         self.T = nx.MultiDiGraph()
         self.T.add_nodes_from(self.G.nodes(data=True))
-        self.T.add_edges_from(self.temporal_edges)
+        self.T.add_edges_from((u, v, attrs['seq'], attrs) for u, v, attrs in self.temporal_edges)  # key = seq -> unique GraphML edge id
 
     def add_edges_to_graph(self):
         """

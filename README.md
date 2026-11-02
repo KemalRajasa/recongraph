@@ -223,7 +223,7 @@ docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
 | `-o`, `--output` | Output filename for the GraphML file. | `reconstruction_edge_graph.graphml` |
 | `--export-csv` | Also export detailed event logs to a CSV file. | `reconstruction_event_logs.csv` |
 | `--export-sigma` | Also export the Sigma-labeled DataFrame to a CSV file. | `<input>_sigma_labeled.csv` |
-| `--strict` | Disable flexible matching (enable strict logsource validation). | flexible mode |
+| `--strict` | Strict logsource validation (category, product and service must match). Without it (flexible mode) only `product` is checked, and only keyword selections fall back to the whole message. | flexible mode |
 | `--keep-all-timestamps` | JSON Lines input: keep every timestamp row of an EVTX record (by default only `Creation Time` is kept). | off |
 | `--edge-order {time,file}` | Order transitions by timestamp (ties keep row order) or by input row order (the original behavior). | `time` |
 | `--temporal-output` | Also write a GraphML with one edge per transition. | none |
@@ -285,7 +285,10 @@ The tool generates the following files:
   timestamps and raw message content, plus `row_index` and `timestamp_us` to trace
   temporal edges back to their log rows.
 - **Sigma Labeled CSV** (`<filename>_sigma_labeled.csv`, with `--export-sigma`):
-  The input log file augmented with matching Sigma rule titles and severity levels.
+  The input log file augmented with matching Sigma rule titles and severity levels:
+  `sigma` holds the primary label (highest severity, ties broken alphabetically by label) and
+  `sigma_all` every matching rule, sorted and separated by ` | `. Rules that use a field modifier
+  ReconGraph does not implement are skipped with a warning when the rules are loaded.
 
 ## Reconstructing Paths Between Events
 

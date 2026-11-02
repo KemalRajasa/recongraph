@@ -19,7 +19,9 @@ Arguments:
 *   ``-r``, ``--rules``: Path to the directory containing **Sigma rules** (.yml files).
 *   ``--export-csv``: Export detailed event logs to a separate CSV file (``reconstruction_event_logs.csv``).
 *   ``--export-sigma``: Export the full sigma-labeled DataFrame to a CSV file.
-*   ``--strict``: Disable flexible matching mode (enforce strict logsource validation).
+*   ``--strict``: Strict logsource validation (category, product and service must match). Flexible mode (default) only
+    checks ``product`` and lets only keyword selections fall back to the whole message.
+    ``--export-sigma`` writes ``sigma`` (primary label) and ``sigma_all`` (every matching rule).
 *   ``--keep-all-timestamps``: JSON Lines input only. Keep every timestamp row of an EVTX record instead of only ``Creation Time``.
 *   ``--edge-order {time,file}``: Order transitions by timestamp (default; ties keep row order, rows without a valid
     timestamp stay right after the row they follow) or by input row order (the original behavior).

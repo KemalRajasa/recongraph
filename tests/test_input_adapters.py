@@ -318,12 +318,13 @@ def test_jsonl_entry_excludes_generic_columns(tmp_path):
 # --- regression: CSV path unchanged (sigma 3c0d351, D:\TA\sigma\rules; ~6 min, deselect with -k "not regression") ---
 
 # Recorded on the step-0 code (regex fix, before the JSONL adapter): (rows, labeled, nodes, edges).
+# flexible: 0 since Phase 2b (product check, no message fallback for field selections)
 CSV_BASELINE = {
-    ("1/failed-login.csv", True): (2001, 2001, 2, 4),
+    ("1/failed-login.csv", True): (2001, 0, 0, 0),
     ("1/failed-login.csv", False): (2001, 0, 0, 0),
-    ("2/windows-firewall-disabled-evtx.csv", True): (2000, 2000, 5, 14),
+    ("2/windows-firewall-disabled-evtx.csv", True): (2000, 0, 0, 0),
     ("2/windows-firewall-disabled-evtx.csv", False): (2000, 0, 0, 0),
-    ("3/4616-with-regex.csv", True): (2001, 2001, 6, 19),
+    ("3/4616-with-regex.csv", True): (2001, 0, 0, 0),
     # strict: the 2 "Relevant Anti-Virus Signature Keywords In Application Log" rows were a logsource false positive
     ("3/4616-with-regex.csv", False): (2001, 0, 0, 0),
 }

@@ -140,9 +140,9 @@ def test_keyword_negation_is_not_field_gated(tmp_path):
     assert rule.match(_entry(["windows"], "evil but benign")) is False
 
 
-def test_flexible_mode_unchanged():
+def test_flexible_mode_checks_the_product():
     rule = SigmaMatcher(str(SIGMA_RULES / "network/zeek/zeek_rdp_public_listener.yml"), flexible_mode=True)
-    assert rule.match(_sysmon_1(Image=r"C:\Windows\System32\mstsc.exe")) is True  # known flexible FP, Phase 2b
+    assert rule.match(_sysmon_1(Image=r"C:\Windows\System32\mstsc.exe")) is False  # product zeek != windows
 
 
 @pytest.mark.parametrize("condition, expected", [
