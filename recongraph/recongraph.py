@@ -210,6 +210,10 @@ class SigmaMatcher:
         
         if isinstance(selection, list):
             for pattern in selection:
+                if isinstance(pattern, dict):  # a list of maps is an OR of map selections
+                    if self._match_selection(pattern, log_entry):
+                        return True
+                    continue
                 pattern_lower = str(pattern).lower()
                 if self._match_simple_pattern(pattern_lower, search_fields):
                     return True

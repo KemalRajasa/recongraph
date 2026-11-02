@@ -114,6 +114,48 @@ def test_regex_pattern_is_not_lowercased(tmp_path):
     assert rule.match(_entry(CommandLine="whoami /all")) is False
 
 
+def test_list_of_maps_is_an_or_of_map_selections(tmp_path):
+    rule = _rule(tmp_path, [{"Image|endswith": "\\whoami.exe"}, {"OriginalFileName": "whoami.exe"}])
+    assert rule.match(_entry(Image=r"C:\Windows\System32\whoami.exe")) is True
+    assert rule.match(_entry(Image=r"C:\x\renamed.exe", OriginalFileName="whoami.exe")) is True
+    assert rule.match(_entry(Image=r"C:\x\renamed.exe", OriginalFileName="cmd.exe")) is False
+
+
+def test_list_mixing_maps_and_keywords(tmp_path):
+    rule = _rule(tmp_path, [{"Image|endswith": "\\evil.exe"}, "mimikatz"])
+    assert rule.match(_entry(Image=r"C:\x\evil.exe")) is True
+    assert rule.match(_entry(desc="sekurlsa via mimikatz")) is True
+    assert rule.match(_entry(Image=r"C:\x\calc.exe", desc="calc")) is False
+
+
+def test_negated_list_of_maps_filter_applies(tmp_path):
+    rule = _rule(tmp_path, {"Image|endswith": "\\svchost.exe"}, condition="selection and not filter",
+                 name="filtered.yml")
+    rule.detection["filter"] = [{"ParentImage|contains": "\\System32\\"}, {"ParentImage|endswith": "\\ngen.exe"}]
+    rule._negated_fields = rule._negated_selection_fields()
+    assert rule.match(_entry(Image=r"C:\Windows\svchost.exe", ParentImage=r"C:\Windows\System32\services.exe")) is False
+    assert rule.match(_entry(Image=r"C:\Windows\svchost.exe", ParentImage=r"C:\Users\x\evil.exe")) is True
+
+
+@pytest.mark.skipif(not SIGMA_RULES.exists(), reason="sigma rules not found (set SIGMA_RULES_PATH)")
+def test_real_rule_with_list_of_maps_filter():
+    rule = SigmaMatcher(str(SIGMA_RULES / "windows/process_creation/proc_creation_win_susp_proc_wrong_parent.yml"),
+                        flexible_mode=False)
+    assert rule.match(_entry(Image=r"C:\Windows\System32\svchost.exe",
+                             ParentImage=r"C:\Windows\System32\services.exe")) is False  # filter_sys (list of maps)
+    assert rule.match(_entry(Image=r"C:\Windows\System32\svchost.exe", ParentImage=r"C:\Users\x\evil.exe")) is True
+
+
+@pytest.mark.skipif(not SIGMA_RULES.exists(), reason="sigma rules not found (set SIGMA_RULES_PATH)")
+def test_real_rule_with_list_of_maps_selection():
+    rule = SigmaMatcher(str(SIGMA_RULES / "windows/process_creation/proc_creation_win_whoami_execution_from_high_priv_process.yml"),
+                        flexible_mode=False)
+    system = r"NT AUTHORITY\SYSTEM"
+    assert rule.match(_entry(Image=r"C:\Windows\System32\whoami.exe", User=system)) is True
+    assert rule.match(_entry(Image=r"C:\x\w.exe", OriginalFileName="whoami.exe", User=system)) is True
+    assert rule.match(_entry(Image=r"C:\Windows\System32\whoami.exe", User=r"CORP\alice")) is False
+
+
 def test_unknown_modifier_skips_rule_with_warning(tmp_path, caplog):
     with pytest.raises(UnsupportedModifierError, match="utf16le"):
         _rule(tmp_path, {"CommandLine|utf16le|base64": "x"}, title="Wide Rule")
