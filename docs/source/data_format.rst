@@ -29,6 +29,59 @@ also joined with newlines into ``Data``. XML-illegal control characters are remo
 
 If not using a Plaso CSV, ReconGraph can also process **raw text logs**. In this case, the tool will treat each line as a description and use the current filename as the source.
 
+Event Identity (``--node=drain``)
+---------------------------------
+
+Every row gets an ``event_key``, which is its node in the graph.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Row
+     - Identity
+     - Example
+   * - EVTX (``parser`` is ``winevtx``)
+     - ``Provider_Name:EventID``
+     - ``Microsoft-Windows-Sysmon:1``
+   * - Structured artefact (any other ``data_type``)
+     - ``data_type:timestamp_desc``, or ``data_type`` for a row without ``timestamp_desc``
+     - ``fs:stat:Last Access Time``, ``syslog:ssh:login:Content Modification Time``
+   * - Free text (``syslog:line``, ``systemd:journal``, ``android:logcat``, ``ios:lockdownd_log:entry``, ``ios:sysdiag_log:entry``, ``ios:sysdiagnose:logd:line``)
+     - ``data_type:template``
+     - ``syslog:line:Server listening on <IP> port <NUM>.``
+
+*   **EVTX fallback**: an event with unparsable XML takes its identity from Plaso's ``message``: ``Source Name``, then
+    ``Provider identifier``, then ``Channel``, then ``unknown``; likewise the event ID.
+*   **Unlisted data types** are structured: one node per data type and timestamp meaning, which never merges two data
+    types. The key depends only on the row, so the same event gets the same key in every input. A log format that needs
+    templates is one entry in ``recongraph.event_identity.FREE_TEXT_DATA_TYPES``.
+*   **Plaso CSV** has no ``data_type`` or XML fields. EVTX rows use ``Source Name:EventID`` from ``message``, without
+    Drain3. Other rows use ``parser`` in place of ``data_type``, and ``text/*`` parsers count as free text, on ``message``.
+    CSV keeps two rows per EVTX record (creation and written time) and all rows are mapped.
+*   **Raw text logs** are free text, with the source ``text``.
+
+Drain3 runs with one template miner per data type, on the raw line (``message_body``, ``body``, otherwise ``message``),
+with GUIDs, SIDs, hex values, IPs, paths and numbers masked, and in two stages: all rows train the miner, then each row is
+matched against the final templates. Configuration and snapshots are in the ``<graph>.meta.json`` sidecar.
+
+The sidecar also lists under ``event_sources`` how each source was treated (``evtx``, ``structured``, ``free_text``), with its
+row count, for example ``{"structured": {"syslog:ssh:login": 2}, "free_text": {"syslog:line": 2}}``. The source is the
+``data_type``, or ``parser`` for Plaso CSV and ``text`` for raw text logs. It is empty with ``--node=sigma``.
+
+Sigma Annotation
+----------------
+
+Sigma runs on every raw row in both node modes. With ``--node=drain`` the result stays an annotation:
+
+*   **Rows**: ``sigma``, ``sigma_all``, ``event_key``, and the level as ``level`` in ``--export-csv`` and as ``sigma_level``
+    in ``--export-sigma``, where the input can have a ``level`` column of its own.
+*   **Nodes**: ``event_key``, ``row_count``, ``sigma_hits`` (rows with an annotation), ``sigma_rules`` (unique, sorted,
+    separated by a vertical bar), ``sigma_max_level``. A node can mix annotated and other rows. ``level`` is absent.
+*   **Temporal edges**: ``src_level``, ``dst_level``, the level of the two rows.
+
+With ``--node=sigma`` nodes keep ``level`` and have none of the other attributes; ``--export-csv`` still adds ``event_key``.
+
 Sigma Rules
 -----------
 

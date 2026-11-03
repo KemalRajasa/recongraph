@@ -20,3 +20,6 @@ Component Classes
    :members:
    :undoc-members:
    :show-inheritance:
+
+.. automodule:: recongraph.event_identity
+   :members: assign_event_keys, new_template_miner, drain3_state

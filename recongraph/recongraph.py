@@ -2,11 +2,13 @@ import base64
 import csv
 import ipaddress
 import itertools
+import json
 import logging
 import re
 import yaml
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from importlib.metadata import PackageNotFoundError, version
 from statistics import median_low
 from typing import List, Dict, Any
 from collections import defaultdict
@@ -20,10 +22,13 @@ import yaml
 from typing import List, Dict, Any
 from pathlib import Path
 
+from recongraph.event_identity import assign_event_keys, xml_safe
 from recongraph.input_adapters import GENERIC_COLUMNS, detect_input_format, load_plaso_jsonl
 
 logger = logging.getLogger(__name__)
 
+NODE_MODES = ("drain", "sigma")
+SIGMA_LEVELS = {"critical": 5, "high": 4, "medium": 3, "low": 2, "informational": 1}
 _WINDASH = ("-", "/", "\u2013", "\u2014", "\u2015")  # Sigma windash: -, /, en dash, em dash, horizontal bar
 
 
@@ -517,8 +522,7 @@ class SigmaRulesLoader:
             return ""
 
         items = [s.strip() for s in sigma_value.split("|")]
-        priority = {"critical": 5, "high": 4, "medium": 3, "low": 2, "informational": 1}
-        scored = [(priority.get(item[item.rfind("[") + 1:item.rfind("]")].lower().strip(), 0), item)
+        scored = [(SIGMA_LEVELS.get(item[item.rfind("[") + 1:item.rfind("]")].lower().strip(), 0), item)
                   for item in items if "[" in item and "]" in item]
         best = max((score for score, _ in scored), default=0)
         return min(item for score, item in scored if score == best) if best else ""
@@ -734,11 +738,19 @@ class EdgeGraph(object):
 
     Transitions follow timestamp order (``edge_order="time"``, ties keep row order)
     or row order (``edge_order="file"``, the original behavior).
+
+    Nodes are the Sigma labels and only labeled rows are mapped (``node_mode="sigma"``), or the event
+    identity of every row with Sigma as node and row attributes (``node_mode="drain"``, see
+    ``recongraph.event_identity``). This class defaults to ``"sigma"``; ReconGraph and the CLI to ``"drain"``.
     """
-    def __init__(self, df: pd.DataFrame, edge_order: str = "time"):
+    def __init__(self, df: pd.DataFrame, edge_order: str = "time", node_mode: str = "sigma"):
         if edge_order not in ("time", "file"):
             raise ValueError(f"edge_order must be 'time' or 'file', got {edge_order!r}")
+        if node_mode not in NODE_MODES:
+            raise ValueError(f"node_mode must be one of {NODE_MODES}, got {node_mode!r}")
         self.edge_order = edge_order
+        self.node_mode = node_mode
+        self.key_column = "sigma" if node_mode == "sigma" else "event_key"
         self.df = df.copy()
         
         if 'message' not in self.df.columns:
@@ -774,6 +786,19 @@ class EdgeGraph(object):
         self.temporal_edges = []
         self.edge_transitions = defaultdict(list)
         self.T = nx.MultiDiGraph()
+        self.drain3 = None
+        self.event_sources = None
+        if node_mode == "drain":
+            self._assign_event_identity()
+
+    def _assign_event_identity(self):
+        """Add event_key and the row's Sigma annotation; empty values are "", which GraphML can store."""
+        self.df[['message', 'datetime']] = self.df[['message', 'datetime']].fillna("")
+        self.df['sigma'] = self.df['sigma'].fillna("") if 'sigma' in self.df.columns else ""
+        self.df['sigma_all'] = self.df['sigma_all'].fillna("") if 'sigma_all' in self.df.columns else self.df['sigma']
+        # not "level": Plaso attributes and EVTX fields can use that name
+        self.df['sigma_level'] = self.df['sigma'].map(self.extract_level)
+        self.df['event_key'], self.drain3, self.event_sources = assign_event_keys(self.df)
 
     @staticmethod
     def _to_epoch_us(values: pd.Series) -> list:
@@ -789,16 +814,17 @@ class EdgeGraph(object):
 
     def define_events(self):
         """
-        Identify unique security events from the labeled dataset.
+        Identify unique events from the dataset.
 
-        This function iterates through the 'sigma' column to find all unique rule matches. 
-        These matches define the nodes of the graph. Each unique Sigma label 
+        This function iterates through the identity column ('sigma' or 'event_key', see ``node_mode``)
+        to find all unique values. These define the nodes of the graph: each one
         becomes a distinct node in the resulting behavioral map.
         """
         lines = self.df['message'].tolist()
-        
-        if 'sigma' in self.df.columns:
-             events = self.df[self.df['sigma'].notna() & (self.df['sigma'] != '')]['sigma'].unique().tolist()
+
+        if self.key_column in self.df.columns:
+             identities = self.df[self.key_column]
+             events = self.df[identities.notna() & (identities != '')][self.key_column].unique().tolist()
         else:
              events = []
 
@@ -829,7 +855,7 @@ class EdgeGraph(object):
         Map log entries to event IDs.
 
         This function processes the DataFrame rows, identifying which event ID corresponds
-        to each log entry based on its Sigma label, and stores this mapping.
+        to each log entry based on its identity column, and stores this mapping.
         """
         self.log_event_id = []
         self.node_members = defaultdict(list)
@@ -841,7 +867,7 @@ class EdgeGraph(object):
         times_us = self._to_epoch_us(self.df['datetime'])
 
         for position, (line_id, row) in enumerate(self.df.iterrows()):
-            sigma_value = row.get('sigma')
+            sigma_value = row.get(self.key_column)
             desc_value = row.get('message')
             timestamp_value = row.get('datetime')
 
@@ -905,13 +931,30 @@ class EdgeGraph(object):
                 self.G.nodes[event_id]['message'] = first_log
                 self.G.nodes[event_id]['timestamp'] = first_timestamp
                 self.G.nodes[event_id]['log_count'] = len(logs)
-                self.G.nodes[event_id]['level'] = self.extract_level(
-                    self.node_labels.get(event_id, "")
-                )
+                if self.node_mode == "drain":
+                    self.G.nodes[event_id].update(self._drain_node_attributes(event_id))
+                else:
+                    self.G.nodes[event_id]['level'] = self.extract_level(
+                        self.node_labels.get(event_id, "")
+                    )
                 known = [t for t in self.event_times_us[event_id] if t is not None]
                 if known:
                     self.G.nodes[event_id].update(self._time_attrs('first_seen', min(known)))
                     self.G.nodes[event_id].update(self._time_attrs('last_seen', max(known)))
+
+    def _drain_node_attributes(self, event_id) -> dict:
+        """The node's identity and the Sigma annotation of its rows; a node can mix annotated and other rows."""
+        rows = self.df.iloc[self.event_rows[event_id]]
+        annotated = rows[rows['sigma_all'] != ""]
+        rules = {rule for labels in annotated['sigma_all'] for rule in labels.split(" | ")}
+        return {
+            'event_key': self.node_labels[event_id],
+            'message': xml_safe(str(self.event_logs[event_id][0])),
+            'row_count': len(rows),
+            'sigma_hits': len(annotated),
+            'sigma_rules': " | ".join(sorted(rules)),
+            'sigma_max_level': max(rows['sigma_level'], key=lambda level: SIGMA_LEVELS.get(level, 0)),
+        }
 
     def _ordered_sequence(self) -> list:
         """Return the (event_id, epoch_us, row) sequence in the configured edge order."""
@@ -935,12 +978,15 @@ class EdgeGraph(object):
         transitions per event pair to determine weights.
         """
         sequence = self._ordered_sequence()
+        levels = self.df['sigma_level'].tolist() if self.node_mode == "drain" else None
         self.temporal_edges = []
         self.edge_transitions = defaultdict(list)
         self.edges_weight = defaultdict(int)
 
         for seq, ((u, t_u, row_u), (v, t_v, row_v)) in enumerate(zip(sequence, sequence[1:])):
             attrs = {'seq': seq, 'src_row': row_u, 'dst_row': row_v}
+            if levels:
+                attrs.update(src_level=levels[row_u], dst_level=levels[row_v])
             if t_u is not None:
                 attrs.update(self._time_attrs('t_src', t_u))
             if t_v is not None:
@@ -1007,6 +1053,8 @@ class EdgeGraph(object):
         contributed to the identified events.
         """
         csv_export_data = []
+        annotations = (self.df[['sigma', 'sigma_all', 'sigma_level']].rename(columns={'sigma_level': 'level'}).to_dict("records")
+                       if self.node_mode == "drain" else None)
         for event_id in self.event_logs.keys():
             logs = self.event_logs[event_id]
             timestamps = self.event_timestamps[event_id]
@@ -1017,10 +1065,12 @@ class EdgeGraph(object):
                 csv_export_data.append({
                     'event_id': event_id,
                     'event_name': self.node_labels[event_id],
+                    'event_key': self.node_labels[event_id],
                     'timestamp': ts,
                     'log': log,
                     'row_index': row_index,
-                    'timestamp_us': ts_us
+                    'timestamp_us': ts_us,
+                    **(annotations[row_index] if annotations else {})
                 })
 
         if csv_export_data:
@@ -1090,12 +1140,37 @@ class ReconGraph(object):
     single automated workflow.
     """
     def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False,
-                 edge_order="time"):
+                 edge_order="time", node_mode="drain"):
         self.input_file = input_file
         self.rules_dir = rules_dir
         self.flexible_mode = flexible_mode
         self.keep_all_timestamps = keep_all_timestamps
         self.edge_order = edge_order
+        self.node_mode = node_mode
+
+    def _write_metadata(self, reconstruction, graph_paths):
+        """Write the run's configuration next to each graph, as ``<graph>.meta.json``."""
+        try:
+            recongraph_version = version("recongraph")
+        except PackageNotFoundError:  # running from a source checkout
+            recongraph_version = "unknown"
+        metadata = {
+            "recongraph_version": recongraph_version,
+            "node_mode": self.node_mode,
+            "edge_order": self.edge_order,
+            "input_file": str(self.input_file),
+            "sigma_rules_path": self.rules_dir,
+            "sigma_matching": "flexible" if self.flexible_mode else "strict",
+            "keep_all_timestamps": self.keep_all_timestamps,
+            "rows_total": len(reconstruction.df),
+            "rows_in_graph": len(reconstruction.sequence),
+            "event_sources": reconstruction.event_sources,
+            "drain3": reconstruction.drain3,
+        }
+        for path in graph_paths:
+            with open(f"{path}.meta.json", "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=1)
+            print(f"[!] Run metadata saved to {path}.meta.json")
 
     def run_all(self, graph_output="reconstruction_edge_graph.graphml",
                 csv_output=None, sigma_output=None, temporal_output=None):
@@ -1113,7 +1188,8 @@ class ReconGraph(object):
         labeler = SigmaLabel(self.input_file, self.rules_dir, flexible_mode=self.flexible_mode,
                              keep_all_timestamps=self.keep_all_timestamps)
         df_labeled = labeler.run()
-        
+        reconstruction = EdgeGraph(df_labeled, edge_order=self.edge_order, node_mode=self.node_mode)
+
         if sigma_output:
             if sigma_output == 'AUTO':
                 base_name = os.path.splitext(os.path.basename(self.input_file))[0]
@@ -1121,12 +1197,13 @@ class ReconGraph(object):
             else:
                 final_sigma_output = sigma_output
                 
-            df_labeled.to_csv(final_sigma_output, index=False)
+            (df_labeled if self.node_mode == "sigma" else reconstruction.df).to_csv(final_sigma_output, index=False)
             print(f"Sigma-labeled data exported to: {final_sigma_output}")
             
         print("\n[Phase 2] Edge Graph Construction")
-        reconstruction = EdgeGraph(df_labeled, edge_order=self.edge_order)
         reconstruction.run_all(graph_output=graph_output, csv_output=csv_output, temporal_output=temporal_output)
+        if reconstruction.G.number_of_nodes():
+            self._write_metadata(reconstruction, [graph_output, *([temporal_output] if temporal_output else [])])
         print("\n[+] Pipeline Completed Successfully")
 
 
@@ -1145,6 +1222,10 @@ def main():
     parser.add_argument('--keep-all-timestamps', action='store_true', help='JSON Lines input: keep every timestamp row of an EVTX record instead of only "Creation Time"')
     parser.add_argument('--edge-order', choices=['time', 'file'], default='time', help='Order transitions by timestamp (default) or by input row order')
     parser.add_argument('--temporal-output', default=None, help='Also write a GraphML with one edge per transition (timestamps, delta, source rows)')
+    parser.add_argument('--node', choices=NODE_MODES, default='drain',
+                        help='Node identity. drain (default): every row is mapped, as Provider:EventID for EVTX, data_type:timestamp_desc for '
+                             'structured artefacts, a Drain3 template for free text; Sigma is stored as an annotation. '
+                             'sigma: the original behavior, only rows with a Sigma label are mapped and the label is the node')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
@@ -1155,7 +1236,8 @@ def main():
             rules_dir=getattr(args, 'rules', None),
             flexible_mode=not args.strict,
             keep_all_timestamps=args.keep_all_timestamps,
-            edge_order=args.edge_order
+            edge_order=args.edge_order,
+            node_mode=args.node
         )
 
         pipeline.run_all(

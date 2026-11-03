@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d8" for="node" attr.name="last_seen_us" attr.type="long"/>
+<key id="d7" for="node" attr.name="last_seen" attr.type="string"/>
+<key id="d6" for="node" attr.name="first_seen_us" attr.type="long"/>
+<key id="d5" for="node" attr.name="first_seen" attr.type="string"/>
+<key id="d4" for="node" attr.name="level" attr.type="string"/>
+<key id="d3" for="node" attr.name="log_count" attr.type="long"/>
+<key id="d2" for="node" attr.name="timestamp" attr.type="string"/>
+<key id="d1" for="node" attr.name="message" attr.type="string"/>
+<key id="d0" for="node" attr.name="event" attr.type="string"/>
+<graph edgedefault="directed"><node id="0">
+  <data key="d0">0. Synthetic LSASS Access[high]</data>
+  <data key="d1">[10 / 0x000a] Source Name: Microsoft-Windows-Sysmon Strings: [None, '2023-11-14 22:13:20.000', 'C:\\Tools\\dumper.exe', 'C:\\Windows\\system32\\lsass.exe', '0x1010'] Record Number: 7</data>
+  <data key="d2">2023-11-14T22:13:22.000000+00:00</data>
+  <data key="d3">1</data>
+  <data key="d4">high</data>
+  <data key="d5">2023-11-14T22:13:22.000000+00:00</data>
+  <data key="d6">1700000002000000</data>
+  <data key="d7">2023-11-14T22:13:22.000000+00:00</data>
+  <data key="d8">1700000002000000</data>
+</node>
+</graph></graphml>

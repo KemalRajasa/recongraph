@@ -59,17 +59,18 @@ change. Using sample 1 as the example:
 Step 1 — Generate the GraphML
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Run ReconGraph on the source CSV, pointing ``-r`` at your Sigma rules directory:
+Run ReconGraph on the source CSV, pointing ``-r`` at your Sigma rules directory. These samples show the Sigma label graph, so they use ``--node=sigma``:
 
 .. code-block:: bash
 
    recongraph \
      -f dataset/1/failed-login.csv \
      -r /path/to/sigma \
+     --node=sigma \
      -o dataset/1/failed-login.graphml
 
 This writes ``failed-login.graphml`` — a directed graph where each node is a
-detected event (labeled with its Sigma rule and severity) and each edge is a
+Sigma label (a rule and its severity) and each edge is a
 weighted temporal transition.
 
 Step 2 — Open the visualizer
@@ -98,6 +99,7 @@ Repeat for the other samples by swapping the filenames, e.g. for sample 2:
    recongraph \
      -f dataset/2/windows-firewall-disabled-evtx.csv \
      -r /path/to/sigma \
+     --node=sigma \
      -o dataset/2/windows-firewall-disabled-evtx.graphml
 
 and for sample 3:
@@ -107,6 +109,7 @@ and for sample 3:
    recongraph \
      -f dataset/3/4616-with-regex.csv \
      -r /path/to/sigma \
+     --node=sigma \
      -o dataset/3/4616-with-regex.graphml
 
 Advanced: Strict Mode
@@ -123,6 +126,7 @@ sample 2:
    recongraph \
      -f dataset/2/windows-firewall-disabled-evtx.csv \
      -r /path/to/sigma \
+     --node=sigma \
      --strict \
      -o dataset/2/windows-firewall-disabled-evtx-strict.graphml
 

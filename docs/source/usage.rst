@@ -9,7 +9,7 @@ ReconGraph can be used from the command line to process Plaso CSV files or raw l
 .. code-block:: bash
 
    recongraph [-h] -f FILE [-o OUTPUT] [-r RULES] [--export-csv [EXPORT_CSV]] [--export-sigma [EXPORT_SIGMA]] [--strict] [--keep-all-timestamps]
-              [--edge-order {time,file}] [--temporal-output TEMPORAL_OUTPUT]
+              [--edge-order {time,file}] [--temporal-output TEMPORAL_OUTPUT] [--node {drain,sigma}]
 
 Arguments:
 ^^^^^^^^^^
@@ -28,6 +28,27 @@ Arguments:
 *   ``--temporal-output``: Also write a GraphML with one edge per transition (``seq``, ``t_src``/``t_dst`` and their
     ``_us`` epoch microseconds, ``delta_us``, ``src_row``/``dst_row``). The aggregate graph (``-o``) keeps ``weight`` and
     adds ``first_seen``/``last_seen`` and ``delta_min_us``/``delta_median_us``/``delta_max_us``.
+*   ``--node {drain,sigma}``: Node identity (default ``drain``), see below.
+
+Node modes:
+^^^^^^^^^^^
+
+.. note::
+   The default changed. ReconGraph used to map only rows with a Sigma label. ``--node=drain`` is now the default and maps
+   every row; ``--node=sigma`` reproduces the old behavior, with byte-identical GraphML files.
+
+*   ``--node=drain``: every row is part of the graph, under an event identity (``event_key``):
+    ``Provider:EventID`` for EVTX; ``data_type:timestamp_desc`` for structured artefacts; ``data_type:template`` for free
+    text, with a template mined by
+    `Drain3 <https://github.com/logpai/Drain3>`_. Sigma still runs on every raw row and is stored as an annotation.
+*   ``--node=sigma``: the node is the primary Sigma label and only labeled rows are mapped. Useful only for sources that
+    have Sigma rules; the graph of a source without rules is empty.
+
+ReconGraph maps events and does not judge them. A Sigma annotation is a starting point for a query; the investigator
+decides which events are of interest. See :doc:`data_format` for the attributes and identity rules.
+
+Each GraphML gets a sidecar ``<graph>.meta.json`` with the run's configuration (node mode, edge order, input file, rule
+path, how each source was treated with its row count, Drain3 configuration and snapshots). The same input and configuration give the same GraphML.
 
 Example:
 ^^^^^^^^
@@ -35,6 +56,7 @@ Example:
 .. code-block:: bash
 
    recongraph -f forensic_timeline.csv -r ./sigma_rules/
+   recongraph -f forensic_timeline.csv -r ./sigma_rules/ --node=sigma
 
 For Windows event logs, JSON Lines input exposes the named EVTX fields (``Image``, ``CommandLine``, ``TargetImage``, ...)
 that field-based Sigma rules need:
@@ -155,7 +177,9 @@ most ``k`` edges (``--max-len``, default 8) in a graph written with ``--temporal
 paths per method and sets ``truncated`` when reached. The functions (``dfs_paths``, ``time_respecting_paths``,
 ``replay_paths``, ``compare``) also accept graphs loaded from an ``EdgeGraph`` via ``load_graphs(edge_graph)``.
 Neo4j equivalents (import with ``apoc.import.graphml`` and ``{storeNodeIds: true, defaultRelationshipType: 'NEXT'}``)
-are in ``docs/cypher/``.
+are in ``docs/cypher/``. Both work in both node modes; with ``--node=drain`` a label is an event identity such as
+``Microsoft-Windows-Sysmon:1``. ``window_around_sigma.cypher`` anchors on annotated rows (``src_level``/``dst_level`` on the
+temporal edges with ``--node=drain``, the node's ``level`` with ``--node=sigma``).
 
 Running Tests
 -------------

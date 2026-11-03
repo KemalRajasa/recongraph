@@ -4,11 +4,12 @@
 
 `recongraph` is a Python library and CLI that reconstructs and visualizes system
 behavior from logs of various devices (e.g. Windows and Linux). It converts Plaso
-`log2timeline` CSV files into a forensic graph timeline: by parsing sequential log
-data and matching it against **Sigma rules**, `recongraph` builds a `MultiDiGraph`
-(Multi-Directed Graph) representing the state transitions and operational flow of
-the target system. This aids forensic analysis, anomaly detection, and
-understanding complex system behavior across platforms.
+`log2timeline` output into a forensic graph timeline: by parsing sequential log
+data, giving every row an event identity and annotating it with **Sigma rules**,
+`recongraph` builds a `MultiDiGraph` (Multi-Directed Graph) representing the state
+transitions and operational flow of the target system. `recongraph` maps events and
+does not judge them: the investigator explores the map and decides which events are of
+interest.
 
 This tool is based on the paper:
 [Forensic Event Reconstruction for Drones](https://ieeexplore.ieee.org/document/9702864).
@@ -37,8 +38,9 @@ This tool is based on the paper:
 
 ## Features
 
-- **Sigma Rule-Based Pattern Matching**: Leverages standardized Sigma rules to identify and label security-relevant events in raw logs.
-- **Forensic Graph Construction**: Transforms sequential log entries from Plaso (log2timeline) into a directed graph, where nodes represent detected events and edges represent temporal transitions.
+- **Every Event on the Map**: By default every timeline row becomes part of the graph, under an event identity: `Provider:EventID` for EVTX, `data_type:timestamp_desc` for structured artefacts, a [Drain3](https://github.com/logpai/Drain3) template for free text. See [Node Modes](#node-modes).
+- **Sigma Annotation**: Standard Sigma rules annotate each row; the result is stored on rows and nodes, as a starting point for queries.
+- **Forensic Graph Construction**: Transforms sequential log entries from Plaso (log2timeline) into a directed graph, where nodes represent kinds of events and edges represent temporal transitions.
 - **Intelligent Log Detection**: Automatically identifies various log formats (e.g., Apache, Linux auth, Syslog) and extracts relevant metadata like HTTP methods, URIs, and status codes.
 - **Weighted Behavioral Mapping**: Edges are weighted by transition frequency, helping to distinguish common flows from rare or suspicious sequences.
 - **Anomaly-Focused Reconstruction**: Specifically isolates and maps behaviors based on rule severity levels (Critical, High, Medium, Low).
@@ -227,6 +229,43 @@ docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
 | `--keep-all-timestamps` | JSON Lines input: keep every timestamp row of an EVTX record (by default only `Creation Time` is kept). | off |
 | `--edge-order {time,file}` | Order transitions by timestamp (ties keep row order) or by input row order (the original behavior). | `time` |
 | `--temporal-output` | Also write a GraphML with one edge per transition. | none |
+| `--node {drain,sigma}` | Node identity, see [Node Modes](#node-modes). | `drain` |
+
+## Node Modes
+
+> **Changed default:** `recongraph` used to map only rows with a Sigma label. The default is now
+> `--node=drain`, which maps every row. `--node=sigma` reproduces the old behavior: its GraphML files are
+> byte-identical to those of the previous version.
+
+| | `--node=drain` (default) | `--node=sigma` |
+|---|---|---|
+| Rows in the graph | all | only rows with a Sigma label |
+| Node identity | event identity below | primary Sigma label |
+| Sigma | annotation on rows and nodes | decides the node |
+| Sources without Sigma rules (Android, iOS, ...) | full graph, no marks | empty graph |
+
+Event identity in `--node=drain`:
+
+| Row | Identity (`event_key`) | Example |
+|---|---|---|
+| EVTX | `Provider:EventID` | `Microsoft-Windows-Sysmon:1` |
+| Structured artefact | `data_type:timestamp_desc` (`data_type` alone for a row without `timestamp_desc`). The key depends only on the row, not on the rest of the file | `fs:stat:Last Access Time`, `syslog:ssh:login:Content Modification Time` |
+| Free text: `syslog:line`, `systemd:journal`, `android:logcat`, `ios:lockdownd_log:entry`, `ios:sysdiag_log:entry`, `ios:sysdiagnose:logd:line` | `data_type:template` | `syslog:line:Server listening on <IP> port <NUM>.` |
+
+- Drain3 is never used for EVTX, because `EventID` already names the kind of event. It runs with one template
+  miner per data type, on the raw line (`message_body`, `body`) rather than the sentence Plaso's formatter builds,
+  with GUIDs, SIDs, hex values, IPs, paths and numbers masked, in two stages: all rows train the miner, then each row is
+  matched against the final templates.
+- EVTX with unparsable XML takes the provider and event ID from Plaso's `message`.
+- Plaso CSV has no `data_type` or XML fields. EVTX rows use `Source Name:EventID` from `message`; other rows use `parser`
+  in place of `data_type` (`usnjrnl:Metadata Modification Time`); `text/*` parsers use Drain3 on `message`. CSV also holds two rows per EVTX record (creation
+  and written time), and all rows are mapped.
+- Plain text input is free text with the source `text`.
+
+Sigma never removes a row in `--node=drain`. Find annotated events with a query, for example
+`MATCH (n) WHERE n.sigma_hits > 0 RETURN n`, or [`docs/cypher/window_around_sigma.cypher`](docs/cypher/window_around_sigma.cypher)
+for the transitions around annotated rows. An annotation is not a verdict: a node with no hit may still be an event of
+interest, and sources without rules carry no marks at all.
 
 ## Input Data Format
 
@@ -271,24 +310,37 @@ logic used to label events. See [Sigma Rules Setup](#sigma-rules-setup).
 The tool generates the following files:
 
 - **GraphML File** (`reconstruction_edge_graph.graphml`): A directed graph where
-  nodes are detected events and edges represent the flow between them. Suitable
+  nodes are kinds of events and edges represent the flow between them. Suitable
   for the bundled visualizer, Gephi, or Cytoscape. Each edge carries `weight`
   (number of transitions), `first_seen`/`last_seen` (ISO 8601 UTC, plus `_us`
   epoch microseconds) and `delta_min_us`/`delta_median_us`/`delta_max_us`; nodes
   carry `first_seen`/`last_seen` too. Time attributes are omitted when timestamps
-  are missing or invalid.
+  are missing or invalid. With `--node=drain` nodes also carry `event_key`, `row_count`,
+  `sigma_hits` (rows with a Sigma annotation), `sigma_rules` (unique, sorted, separated
+  by ` | `) and `sigma_max_level`, and have no `level`; with `--node=sigma` they carry `level`.
 - **Temporal GraphML** (with `--temporal-output <path>`): the same nodes with one
   edge per consecutive transition: `seq`, `t_src`/`t_dst` (+ `_us`), `delta_us`,
-  and `src_row`/`dst_row` (row index in the Sigma-labeled data).
+  and `src_row`/`dst_row` (row index in the Sigma-labeled data). With `--node=drain`
+  also `src_level`/`dst_level`: the Sigma level of the two rows, empty when not annotated.
 - **Event Logs CSV** (`reconstruction_event_logs.csv`, with `--export-csv`): A
   detailed breakdown of every log entry associated with a graph node, including
   timestamps and raw message content, plus `row_index` and `timestamp_us` to trace
-  temporal edges back to their log rows.
+  temporal edges back to their log rows and `event_key`, the identity of the row's node, so
+  the content of any node can be opened. With `--node=drain` also the row's `sigma`,
+  `sigma_all` and `level`.
 - **Sigma Labeled CSV** (`<filename>_sigma_labeled.csv`, with `--export-sigma`):
   The input log file augmented with matching Sigma rule titles and severity levels:
   `sigma` holds the primary label (highest severity, ties broken alphabetically by label) and
   `sigma_all` every matching rule, sorted and separated by ` | `. Rules that use a field modifier
   ReconGraph does not implement are skipped with a warning when the rules are loaded.
+  With `--node=drain` also `event_key` and `sigma_level`.
+- **Run Metadata** (`<graph>.meta.json`, next to each GraphML): the configuration of the run, in a sidecar
+  so that GraphML stays plain and `--node=sigma` output stays identical to earlier versions: `node_mode`, `edge_order`,
+  `input_file`, `sigma_rules_path`, `sigma_matching`, `keep_all_timestamps`, `recongraph_version`, `rows_total`,
+  `rows_in_graph`, under `event_sources` how each source was treated and its row count (`evtx`, `structured`, `free_text`;
+  the source is the `data_type`, or `parser` for Plaso CSV; empty with `--node=sigma`), and under `drain3` the version, the
+  configuration (`sim_th`, `depth`, `max_children`, masking) and a snapshot of each template miner. The same input and
+  configuration give the same GraphML.
 
 ## Reconstructing Paths Between Events
 

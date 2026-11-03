@@ -535,7 +535,9 @@ function parseGraphML(xml) {
     nodes.push({
       id,
       label: a.label || a.sigma || a.event || id,
-      level: normSev(a.level || a.severity || a.sigma_level ||
+      // --node=drain: sigma_max_level, possibly empty; a template ending in [...] is not a severity
+      level: normSev(a.sigma_max_level !== undefined ? a.sigma_max_level :
+                     a.level || a.severity || a.sigma_level ||
                      levelFromLabel(a.event || a.sigma || a.label || '')),
       count: parseInt(a.count || a.log_count || '1') || 1,
       timestamp: a.timestamp || a.datetime || '',
