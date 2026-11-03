@@ -570,8 +570,7 @@ class SigmaLabel(object):
             self._extract_http_fields(desc, parsed)
             
         if 'auth.log' in filename:
-            # TODO(phase 3): also add 'auth'; strict logsource matching now rejects Sigma rules with service: auth
-            log_types.extend(['linux', 'sshd'])
+            log_types.extend(['linux', 'auth', 'sshd'])
             if 'pam' in lower_desc: log_types.append('pam')
         if 'syslog' in filename:
             log_types.extend(['syslog', 'linux'])

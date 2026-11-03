@@ -166,9 +166,9 @@ def test_illegal_xml_characters_are_stripped(caplog):
     assert "1 records recovered by removing XML-illegal characters, 1 still unparsable" in caplog.text
 
 
-def test_non_evtx_record_has_generic_columns_only(sample):
+def test_non_evtx_record_without_attributes_has_generic_columns_only(sample):
     row = sample[sample["parser"] == "filestat"].iloc[0]
-    assert row["log_type"] is None
+    assert row["log_type"] == []  # fs:stat has no Sigma logsource tokens (tests/test_plaso_generic.py)
     assert row["message"] == r"C:\Windows\Temp\a.txt Type: file"
     assert pd.isna(row["EventID"])
 

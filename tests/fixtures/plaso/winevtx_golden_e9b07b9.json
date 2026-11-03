@@ -1,0 +1,597 @@
+{
+ "plaso_sample.jsonl|keep_all=False": [
+  {
+   "datetime": "2023-11-14T22:13:21.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[1] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_creation"
+   ],
+   "EventID": "1",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "5",
+   "Security_UserID": "S-1-5-18",
+   "Image": "C:\\Windows\\System32\\whoami.exe"
+  },
+  {
+   "datetime": "2023-11-14T22:13:22.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[10 / 0x000a] Source Name: Microsoft-Windows-Sysmon Strings: [None, '2023-11-14 22:13:20.000', 'C:\\\\Tools\\\\dumper.exe', 'C:\\\\Windows\\\\system32\\\\lsass.exe', '0x1010'] Record Number: 7",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_access"
+   ],
+   "EventID": "10",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "7",
+   "Security_UserID": "S-1-5-18",
+   "SourceImage": "C:\\Tools\\dumper.exe",
+   "TargetImage": "C:\\Windows\\system32\\lsass.exe",
+   "GrantedAccess": "0x1010"
+  },
+  {
+   "datetime": "2023-11-14T22:13:23.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[400] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "powershell-classic",
+    "ps_classic_start"
+   ],
+   "EventID": "400",
+   "Channel": "Windows PowerShell",
+   "Provider_Name": "PowerShell",
+   "Computer": "host01.test.local",
+   "EventRecordID": "9",
+   "Security_UserID": "S-1-5-18",
+   "param1": "Available",
+   "param2": "None",
+   "param3": "HostName=ConsoleHost",
+   "Data": "Available\nNone\nHostName=ConsoleHost"
+  },
+  {
+   "datetime": "2023-11-14T22:13:23.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Windows PowerShell",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "10",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice",
+   "SubjectDomainName": "TEST",
+   "BackupPath": ""
+  },
+  {
+   "datetime": "2023-11-14T22:13:24.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[0] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows"
+   ]
+  },
+  {
+   "datetime": "2023-11-14T22:13:24.500000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[4672] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "security"
+   ],
+   "EventID": "4672",
+   "Channel": "Security",
+   "Provider_Name": "Microsoft-Windows-Security-Auditing",
+   "Computer": "host01.test.local",
+   "EventRecordID": "20",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "bob",
+   "PrivilegeList": "SeDebugPrivilege"
+  },
+  {
+   "datetime": "2023-11-14T22:13:25.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[4688] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "security",
+    "process_creation"
+   ],
+   "EventID": "4688",
+   "Channel": "Security",
+   "Provider_Name": "Microsoft-Windows-Security-Auditing",
+   "Computer": "host01.test.local",
+   "EventRecordID": "30",
+   "Security_UserID": "S-1-5-18",
+   "NewProcessName": "C:\\Windows\\System32\\cmd.exe",
+   "ParentProcessName": "C:\\Windows\\explorer.exe",
+   "CommandLine": "cmd.exe /c whoami",
+   "Image": "C:\\Windows\\System32\\cmd.exe",
+   "ParentImage": "C:\\Windows\\explorer.exe"
+  }
+ ],
+ "plaso_sample.jsonl|keep_all=True": [
+  {
+   "datetime": "2023-11-14T22:13:21.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[1] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_creation"
+   ],
+   "EventID": "1",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "5",
+   "Security_UserID": "S-1-5-18",
+   "Image": "C:\\Windows\\System32\\whoami.exe"
+  },
+  {
+   "datetime": "2023-11-14T22:13:22.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[10 / 0x000a] Source Name: Microsoft-Windows-Sysmon Strings: [None, '2023-11-14 22:13:20.000', 'C:\\\\Tools\\\\dumper.exe', 'C:\\\\Windows\\\\system32\\\\lsass.exe', '0x1010'] Record Number: 7",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_access"
+   ],
+   "EventID": "10",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "7",
+   "Security_UserID": "S-1-5-18",
+   "SourceImage": "C:\\Tools\\dumper.exe",
+   "TargetImage": "C:\\Windows\\system32\\lsass.exe",
+   "GrantedAccess": "0x1010"
+  },
+  {
+   "datetime": "2023-11-14T22:13:23.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[400] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "powershell-classic",
+    "ps_classic_start"
+   ],
+   "EventID": "400",
+   "Channel": "Windows PowerShell",
+   "Provider_Name": "PowerShell",
+   "Computer": "host01.test.local",
+   "EventRecordID": "9",
+   "Security_UserID": "S-1-5-18",
+   "param1": "Available",
+   "param2": "None",
+   "param3": "HostName=ConsoleHost",
+   "Data": "Available\nNone\nHostName=ConsoleHost"
+  },
+  {
+   "datetime": "2023-11-14T22:13:23.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[400] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "powershell-classic",
+    "ps_classic_start"
+   ],
+   "EventID": "400",
+   "Channel": "Windows PowerShell",
+   "Provider_Name": "PowerShell",
+   "Computer": "host01.test.local",
+   "EventRecordID": "9",
+   "Security_UserID": "S-1-5-18",
+   "param1": "Available",
+   "param2": "None",
+   "param3": "HostName=ConsoleHost",
+   "Data": "Available\nNone\nHostName=ConsoleHost"
+  },
+  {
+   "datetime": "2023-11-14T22:13:23.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Windows PowerShell",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "10",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice",
+   "SubjectDomainName": "TEST",
+   "BackupPath": ""
+  },
+  {
+   "datetime": "2023-11-14T22:13:23.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Windows PowerShell",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "10",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice",
+   "SubjectDomainName": "TEST",
+   "BackupPath": ""
+  },
+  {
+   "datetime": "2023-11-14T22:13:24.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[0] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows"
+   ]
+  },
+  {
+   "datetime": "2023-11-14T22:13:24.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[0] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows"
+   ]
+  },
+  {
+   "datetime": "2023-11-14T22:13:24.500000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[4672] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "security"
+   ],
+   "EventID": "4672",
+   "Channel": "Security",
+   "Provider_Name": "Microsoft-Windows-Security-Auditing",
+   "Computer": "host01.test.local",
+   "EventRecordID": "20",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "bob",
+   "PrivilegeList": "SeDebugPrivilege"
+  },
+  {
+   "datetime": "2023-11-14T22:13:24.500000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[4672] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "security"
+   ],
+   "EventID": "4672",
+   "Channel": "Security",
+   "Provider_Name": "Microsoft-Windows-Security-Auditing",
+   "Computer": "host01.test.local",
+   "EventRecordID": "20",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "bob",
+   "PrivilegeList": "SeDebugPrivilege"
+  },
+  {
+   "datetime": "2023-11-14T22:13:25.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[4688] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "security",
+    "process_creation"
+   ],
+   "EventID": "4688",
+   "Channel": "Security",
+   "Provider_Name": "Microsoft-Windows-Security-Auditing",
+   "Computer": "host01.test.local",
+   "EventRecordID": "30",
+   "Security_UserID": "S-1-5-18",
+   "NewProcessName": "C:\\Windows\\System32\\cmd.exe",
+   "ParentProcessName": "C:\\Windows\\explorer.exe",
+   "CommandLine": "cmd.exe /c whoami",
+   "Image": "C:\\Windows\\System32\\cmd.exe",
+   "ParentImage": "C:\\Windows\\explorer.exe"
+  },
+  {
+   "datetime": "2023-11-14T22:13:25.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[4688] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "security",
+    "process_creation"
+   ],
+   "EventID": "4688",
+   "Channel": "Security",
+   "Provider_Name": "Microsoft-Windows-Security-Auditing",
+   "Computer": "host01.test.local",
+   "EventRecordID": "30",
+   "Security_UserID": "S-1-5-18",
+   "NewProcessName": "C:\\Windows\\System32\\cmd.exe",
+   "ParentProcessName": "C:\\Windows\\explorer.exe",
+   "CommandLine": "cmd.exe /c whoami",
+   "Image": "C:\\Windows\\System32\\cmd.exe",
+   "ParentImage": "C:\\Windows\\explorer.exe"
+  },
+  {
+   "datetime": "2023-11-14T22:13:29.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[10 / 0x000a] Source Name: Microsoft-Windows-Sysmon Strings: [None, '2023-11-14 22:13:20.000', 'C:\\\\Tools\\\\dumper.exe', 'C:\\\\Windows\\\\system32\\\\lsass.exe', '0x1010'] Record Number: 7",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_access"
+   ],
+   "EventID": "10",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "7",
+   "Security_UserID": "S-1-5-18",
+   "SourceImage": "C:\\Tools\\dumper.exe",
+   "TargetImage": "C:\\Windows\\system32\\lsass.exe",
+   "GrantedAccess": "0x1010"
+  }
+ ],
+ "sysmon_lsass.jsonl|keep_all=False": [
+  {
+   "datetime": "2023-11-14T22:13:22.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[10 / 0x000a] Source Name: Microsoft-Windows-Sysmon Strings: [None, '2023-11-14 22:13:20.000', 'C:\\\\Tools\\\\dumper.exe', 'C:\\\\Windows\\\\system32\\\\lsass.exe', '0x1010'] Record Number: 7",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_access"
+   ],
+   "EventID": "10",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "7",
+   "Security_UserID": "S-1-5-18",
+   "SourceImage": "C:\\Tools\\dumper.exe",
+   "TargetImage": "C:\\Windows\\system32\\lsass.exe",
+   "GrantedAccess": "0x1010"
+  }
+ ],
+ "sysmon_lsass.jsonl|keep_all=True": [
+  {
+   "datetime": "2023-11-14T22:13:22.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[10 / 0x000a] Source Name: Microsoft-Windows-Sysmon Strings: [None, '2023-11-14 22:13:20.000', 'C:\\\\Tools\\\\dumper.exe', 'C:\\\\Windows\\\\system32\\\\lsass.exe', '0x1010'] Record Number: 7",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_access"
+   ],
+   "EventID": "10",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "7",
+   "Security_UserID": "S-1-5-18",
+   "SourceImage": "C:\\Tools\\dumper.exe",
+   "TargetImage": "C:\\Windows\\system32\\lsass.exe",
+   "GrantedAccess": "0x1010"
+  },
+  {
+   "datetime": "2023-11-14T22:13:22.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[10 / 0x000a] Source Name: Microsoft-Windows-Sysmon Strings: [None, '2023-11-14 22:13:20.000', 'C:\\\\Tools\\\\dumper.exe', 'C:\\\\Windows\\\\system32\\\\lsass.exe', '0x1010'] Record Number: 7",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "sysmon",
+    "process_access"
+   ],
+   "EventID": "10",
+   "Channel": "Microsoft-Windows-Sysmon/Operational",
+   "Provider_Name": "Microsoft-Windows-Sysmon",
+   "Computer": "host01.test.local",
+   "EventRecordID": "7",
+   "Security_UserID": "S-1-5-18",
+   "SourceImage": "C:\\Tools\\dumper.exe",
+   "TargetImage": "C:\\Windows\\system32\\lsass.exe",
+   "GrantedAccess": "0x1010"
+  }
+ ],
+ "eventlog_cleared.jsonl|keep_all=False": [
+  {
+   "datetime": "2023-11-14T22:13:20.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Microsoft-Windows-PowerShell/Operational",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "1",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice"
+  },
+  {
+   "datetime": "2023-11-14T22:13:21.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Microsoft-Windows-Bits-Client/Operational",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "2",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice"
+  }
+ ],
+ "eventlog_cleared.jsonl|keep_all=True": [
+  {
+   "datetime": "2023-11-14T22:13:20.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Microsoft-Windows-PowerShell/Operational",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "1",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice"
+  },
+  {
+   "datetime": "2023-11-14T22:13:20.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Microsoft-Windows-PowerShell/Operational",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "1",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice"
+  },
+  {
+   "datetime": "2023-11-14T22:13:21.000000+00:00",
+   "timestamp_desc": "Creation Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Microsoft-Windows-Bits-Client/Operational",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "2",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice"
+  },
+  {
+   "datetime": "2023-11-14T22:13:21.000000+00:00",
+   "timestamp_desc": "Content Modification Time",
+   "message": "[104] synthetic event",
+   "parser": "winevtx",
+   "display_name": "OS:/data/synthetic.evtx",
+   "data_type": "windows:evtx:record",
+   "log_type": [
+    "windows",
+    "system"
+   ],
+   "EventID": "104",
+   "Channel": "Microsoft-Windows-Bits-Client/Operational",
+   "Provider_Name": "Microsoft-Windows-Eventlog",
+   "Computer": "host01.test.local",
+   "EventRecordID": "2",
+   "Security_UserID": "S-1-5-18",
+   "SubjectUserName": "alice"
+  }
+ ]
+}
