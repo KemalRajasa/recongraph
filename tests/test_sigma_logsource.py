@@ -122,8 +122,8 @@ def test_zeek_rule_does_not_match_windows():
     rule = _rule("network/zeek/zeek_rdp_public_listener.yml")
     entry = _sysmon_1(Image=r"C:\Windows\System32\mstsc.exe")
     assert rule.match(entry) is False
-    rule.logsource = {}  # even without the logsource gate, `not selection` needs id.orig_h
-    assert rule.match(entry) is False
+    rule.logsource = {}  # only the logsource gate rejects it: `not selection` on an absent field fires, as in Hayabusa
+    assert rule.match(entry) is True
 
 
 def test_positive_field_rule_unchanged(tmp_path):
@@ -164,10 +164,10 @@ def test_negated_group_parsing(tmp_path, condition, expected):
 
 # --- null semantics ---
 
-def test_null_matches_missing_or_empty_field(tmp_path):
+def test_null_matches_missing_field_only(tmp_path):
     rule = _synthetic(tmp_path, {"product": "windows"}, {"selection": {"ParentUser": None}, "condition": "selection"})
     assert rule.match(_sysmon_1(User="alice")) is True
-    assert rule.match(_sysmon_1(User="alice", ParentUser="")) is True
+    assert rule.match(_sysmon_1(User="alice", ParentUser="")) is False
     assert rule.match(_sysmon_1(User="alice", ParentUser="bob")) is False
 
 

@@ -10,6 +10,7 @@ ReconGraph can be used from the command line to process Plaso CSV files or raw l
 
    recongraph [-h] -f FILE [-o OUTPUT] [-r RULES] [--export-csv [EXPORT_CSV]] [--export-sigma [EXPORT_SIGMA]] [--strict] [--keep-all-timestamps]
               [--edge-order {time,file}] [--temporal-output TEMPORAL_OUTPUT] [--node {drain,sigma}]
+              [--exclude-status STATUS[,STATUS...]] [--exclude-rules-file FILE]
 
 Arguments:
 ^^^^^^^^^^
@@ -21,7 +22,7 @@ Arguments:
 *   ``--export-sigma``: Export the full sigma-labeled DataFrame to a CSV file.
 *   ``--strict``: Strict logsource validation (category, product and service must match). Flexible mode (default) only
     checks ``product`` and lets only keyword selections fall back to the whole message.
-    ``--export-sigma`` writes ``sigma`` (primary label) and ``sigma_all`` (every matching rule).
+    ``--export-sigma`` writes ``sigma`` (primary label), ``sigma_all`` (every matching rule) and ``sigma_ids`` (their rule IDs, sorted).
 *   ``--keep-all-timestamps``: JSON Lines input only. Keep every timestamp row of an EVTX record instead of only ``Creation Time``.
 *   ``--edge-order {time,file}``: Order transitions by timestamp (default; ties keep row order, rows without a valid
     timestamp stay right after the row they follow) or by input row order (the original behavior).
@@ -29,6 +30,8 @@ Arguments:
     ``_us`` epoch microseconds, ``delta_us``, ``src_row``/``dst_row``). The aggregate graph (``-o``) keeps ``weight`` and
     adds ``first_seen``/``last_seen`` and ``delta_min_us``/``delta_median_us``/``delta_max_us``.
 *   ``--node {drain,sigma}``: Node identity (default ``drain``), see below.
+*   ``--exclude-status``: Do not load rules with these statuses, comma separated (ex: ``deprecated,unsupported``).
+*   ``--exclude-rules-file``: Do not load rules whose ``id`` is listed in this file (format of Hayabusa ``exclude_rules.txt``: one UUID per line, ``#`` starts a comment).
 
 Node modes:
 ^^^^^^^^^^^

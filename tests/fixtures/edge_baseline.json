@@ -16,8 +16,16 @@
   "edges": []
  },
  "3/4616-with-regex.csv|flexible": {
-  "nodes": [],
-  "edges": []
+  "nodes": [
+   "Relevant Anti-Virus Signature Keywords In Application Log[high]"
+  ],
+  "edges": [
+   [
+    "Relevant Anti-Virus Signature Keywords In Application Log[high]",
+    "Relevant Anti-Virus Signature Keywords In Application Log[high]",
+    1
+   ]
+  ]
  },
  "3/4616-with-regex.csv|strict": {
   "nodes": [],

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError, version
 from statistics import median_low
 from typing import List, Dict, Any
-from collections import defaultdict
+from collections import Counter, defaultdict
 import networkx as nx
 from collections import defaultdict
 import os
@@ -55,6 +55,15 @@ SUPPORTED_MODIFIERS = frozenset({"contains", "startswith", "endswith", "all", "r
                                  "exists", "lt", "lte", "gt", "gte", *_TRANSFORMS})
 
 
+_RULE_ID = re.compile(r"[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}")
+
+
+def read_rule_id_list(path) -> set:
+    """Rule IDs of a list in the format of Hayabusa's exclude_rules.txt: one per line, ``#`` starts a comment, other lines are ignored."""
+    with open(path, 'r', encoding='utf-8') as f:
+        return {rule_id for rule_id in (line.split('#', 1)[0].strip() for line in f) if _RULE_ID.fullmatch(rule_id)}
+
+
 class UnsupportedModifierError(ValueError):
     """A rule uses a field modifier the matcher does not implement."""
 
@@ -69,10 +78,13 @@ class SigmaMatcher:
     specific log entry matches the rule's criteria, supporting field 
     modifiers and complex boolean conditions.
     """
-    def __init__(self, rule_file: str, flexible_mode: bool = True):
-        with open(rule_file, 'r', encoding='utf-8') as f:
-            self.rule_data = yaml.safe_load(f)
+    def __init__(self, rule_file: str, flexible_mode: bool = True, rule_data: Dict[str, Any] = None):
+        if rule_data is None:
+            with open(rule_file, 'r', encoding='utf-8') as f:
+                rule_data = yaml.safe_load(f)
+        self.rule_data = rule_data
 
+        self.rule_id = str(self.rule_data.get('id', ''))
         self.title = self.rule_data.get('title', 'Unknown')
         self.description = self.rule_data.get('description', '')
         self.level = self.rule_data.get('level', 'medium')
@@ -116,9 +128,6 @@ class SigmaMatcher:
             if key == 'condition':
                 continue
             selections[key.lower()] = self._match_selection(value, log_entry)
-    
-        # a negated selection the entry has no fields for cannot vouch for a match: treat it as matched
-        selections.update(dict.fromkeys(self._unavailable_negations(log_entry), True))
     
         return self._evaluate_condition(condition, selections)
 
@@ -201,7 +210,7 @@ class SigmaMatcher:
 
     @staticmethod
     def _is_null(pattern) -> bool:
-        """Sigma `null` (YAML null, or the literal 'null'): the field is missing or empty."""
+        """Sigma `null` (YAML null, or the literal 'null'): the field is missing. As in Hayabusa, a present but empty field is not null."""
         return pattern is None or str(pattern).lower() == "null"
 
     def _match_selection(self, selection, log_entry: Dict) -> bool:
@@ -261,7 +270,7 @@ class SigmaMatcher:
 
         Transform modifiers (windash, base64, base64offset) expand each pattern into variants first;
         a pattern matches when one of its variants matches. ``all`` requires every pattern to match,
-        otherwise one is enough. A null pattern matches a missing or empty field.
+        otherwise one is enough. A null pattern matches only a missing field, not an empty one.
         """
         value = self._get_field_value(log_entry, field_name)
         if "exists" in modifiers:
@@ -269,7 +278,7 @@ class SigmaMatcher:
         results = []
         for p in patterns:
             if self._is_null(p):
-                results.append(value is None or value == "")
+                results.append(value is None)
                 continue
             variants = [str(p)]
             for m in modifiers:
@@ -400,7 +409,7 @@ class SigmaMatcher:
         if not condition:
             return any(selections.values())
     
-        condition = condition.lower().strip()
+        condition = " ".join(condition.lower().split())
         
         def replace_x_of(match):
             count_str = match.group(1) 
@@ -445,10 +454,15 @@ class SigmaRulesLoader:
     executable matchers. It provides a high-level interface for checking log 
     entries against the entire rule set and managing rule-specific metadata.
     """
-    def __init__(self, rules_dir: str, flexible_mode: bool = True):
+    def __init__(self, rules_dir: str, flexible_mode: bool = True, exclude_status=(), exclude_rules_file: str = None):
         self.rules_dir = rules_dir
         self.flexible_mode = flexible_mode
+        self.exclude_status = set(exclude_status)
+        self.exclude_rules_file = exclude_rules_file
         self.matchers = []
+        self.skipped = []
+        self.skip_counts = dict.fromkeys(("status", "exclude_list", "unsupported_modifier", "invalid"), 0)
+        self.skipped_by_status = Counter()
         self._load_rules()
 
     def _load_rules(self):
@@ -470,11 +484,21 @@ class SigmaRulesLoader:
         mode_str = "FLEXIBLE" if self.flexible_mode else "STRICT"
         print(f"- Loading Sigma Rules from: {self.rules_dir} (Mode: {mode_str})")
         
+        exclude_ids = read_rule_id_list(self.exclude_rules_file) if self.exclude_rules_file else set()
         loaded_count = 0
-        self.skipped = []
         for rule_file in sorted(rules_path.glob('**/*.yml')):
             try:
-                matcher = SigmaMatcher(str(rule_file), flexible_mode=self.flexible_mode)
+                with open(rule_file, 'r', encoding='utf-8') as f:
+                    rule_data = yaml.safe_load(f)
+                # same order as Hayabusa: an excluded rule counts as excluded whatever its status
+                if str(rule_data.get('id', '')) in exclude_ids:
+                    self.skip_counts["exclude_list"] += 1
+                    continue
+                if rule_data.get('status') in self.exclude_status:
+                    self.skip_counts["status"] += 1
+                    self.skipped_by_status[rule_data['status']] += 1
+                    continue
+                matcher = SigmaMatcher(str(rule_file), flexible_mode=self.flexible_mode, rule_data=rule_data)
                 self.matchers.append({
                     'matcher': matcher,
                     'title': matcher.title,
@@ -484,12 +508,25 @@ class SigmaRulesLoader:
             except UnsupportedModifierError as e:
                 logger.warning("Skipping %s: %s", rule_file.name, e)
                 self.skipped.append(str(e))
+                self.skip_counts["unsupported_modifier"] += 1
             except Exception:
-                pass
+                self.skip_counts["invalid"] += 1
         
         print(f"- Total rules loaded: {loaded_count} rules")
         if self.skipped:
             print(f"- Skipped {len(self.skipped)} rules with unsupported modifiers")
+        if self.skip_counts["status"] or self.skip_counts["exclude_list"]:
+            print(f"- Skipped {self.skip_counts['status']} rules by status and {self.skip_counts['exclude_list']} by exclude list")
+
+    def summary(self) -> Dict[str, Any]:
+        """Rules loaded and skipped per reason, and the options that selected them (for the run metadata)."""
+        return {
+            "loaded": len(self.matchers),
+            "skipped": self.skip_counts,
+            "skipped_by_status": dict(sorted(self.skipped_by_status.items())),
+            "exclude_status": sorted(self.exclude_status),
+            "exclude_rules_file": self.exclude_rules_file,
+        }
 
     def check_row(self, parsed_row: Dict[str, Any]) -> List[Dict[str, str]]:
         """
@@ -505,6 +542,7 @@ class SigmaRulesLoader:
                 matches.append({
                     'rule_title': matcher.title,
                     'rule_level': matcher.level,
+                    'rule_id': matcher.rule_id,
                 })
         return matches
 
@@ -536,11 +574,15 @@ class SigmaLabel(object):
     identifying the appropriate log type and source, and applying the loaded 
     Sigma rules to each entry to generate a labeled dataset.
     """
-    def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False):
+    def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False,
+                 exclude_status=(), exclude_rules_file=None):
         self.input_file = input_file
         self.rules_dir = rules_dir
         self.flexible_mode = flexible_mode
         self.keep_all_timestamps = keep_all_timestamps
+        self.exclude_status = exclude_status
+        self.exclude_rules_file = exclude_rules_file
+        self.rules_loader = None
 
     def count_lines(self):
         """
@@ -647,7 +689,9 @@ class SigmaLabel(object):
         This function orchestrates the loading of data, detection of log types,
         matching against Sigma rules, and generation of a labeled DataFrame.
         """
-        rules_loader = SigmaRulesLoader(self.rules_dir, flexible_mode=self.flexible_mode)
+        rules_loader = SigmaRulesLoader(self.rules_dir, flexible_mode=self.flexible_mode,
+                                        exclude_status=self.exclude_status, exclude_rules_file=self.exclude_rules_file)
+        self.rules_loader = rules_loader
         
         if not rules_loader.matchers:
              print("No rules loaded! Continuing without matching...")
@@ -722,6 +766,8 @@ class SigmaLabel(object):
             new_row['logsource'] = str(features['log_type'])
             new_row['sigma'] = rules_loader.extract_sigma_priority(detection_str)
             new_row['sigma_all'] = detection_str
+            # sorted by rule ID; not aligned with sigma_all, where rules sharing a title and level are one label
+            new_row['sigma_ids'] = " | ".join(sorted({m['rule_id'] for m in matches if m['rule_id']}))
             processed_rows.append(new_row)
 
         return pd.DataFrame(processed_rows)
@@ -1140,15 +1186,17 @@ class ReconGraph(object):
     single automated workflow.
     """
     def __init__(self, input_file, rules_dir=None, flexible_mode=True, keep_all_timestamps=False,
-                 edge_order="time", node_mode="drain"):
+                 edge_order="time", node_mode="drain", exclude_status=(), exclude_rules_file=None):
         self.input_file = input_file
         self.rules_dir = rules_dir
         self.flexible_mode = flexible_mode
         self.keep_all_timestamps = keep_all_timestamps
+        self.exclude_status = exclude_status
+        self.exclude_rules_file = exclude_rules_file
         self.edge_order = edge_order
         self.node_mode = node_mode
 
-    def _write_metadata(self, reconstruction, graph_paths):
+    def _write_metadata(self, reconstruction, graph_paths, rules_loader):
         """Write the run's configuration next to each graph, as ``<graph>.meta.json``."""
         try:
             recongraph_version = version("recongraph")
@@ -1161,6 +1209,7 @@ class ReconGraph(object):
             "input_file": str(self.input_file),
             "sigma_rules_path": self.rules_dir,
             "sigma_matching": "flexible" if self.flexible_mode else "strict",
+            "sigma_rules": rules_loader.summary(),
             "keep_all_timestamps": self.keep_all_timestamps,
             "rows_total": len(reconstruction.df),
             "rows_in_graph": len(reconstruction.sequence),
@@ -1186,7 +1235,8 @@ class ReconGraph(object):
         
         print("[Phase 1] Sigma Labeling")
         labeler = SigmaLabel(self.input_file, self.rules_dir, flexible_mode=self.flexible_mode,
-                             keep_all_timestamps=self.keep_all_timestamps)
+                             keep_all_timestamps=self.keep_all_timestamps,
+                             exclude_status=self.exclude_status, exclude_rules_file=self.exclude_rules_file)
         df_labeled = labeler.run()
         reconstruction = EdgeGraph(df_labeled, edge_order=self.edge_order, node_mode=self.node_mode)
 
@@ -1203,7 +1253,7 @@ class ReconGraph(object):
         print("\n[Phase 2] Edge Graph Construction")
         reconstruction.run_all(graph_output=graph_output, csv_output=csv_output, temporal_output=temporal_output)
         if reconstruction.G.number_of_nodes():
-            self._write_metadata(reconstruction, [graph_output, *([temporal_output] if temporal_output else [])])
+            self._write_metadata(reconstruction, [graph_output, *([temporal_output] if temporal_output else [])], labeler.rules_loader)
         print("\n[+] Pipeline Completed Successfully")
 
 
@@ -1219,6 +1269,10 @@ def main():
     parser.add_argument('--export-csv', nargs='?', const='reconstruction_event_logs.csv', default=None, help='Export detailed event logs to a separate CSV file')
     parser.add_argument('--export-sigma', nargs='?', const='AUTO', default=None, help='Export the sigma-labeled DataFrame to a CSV file')
     parser.add_argument('--strict', action='store_true', help='Disable flexible matching mode (strict validation)')
+    parser.add_argument('--exclude-status', type=lambda v: [s.strip() for s in v.split(',') if s.strip()], default=[], metavar='STATUS[,STATUS...]',
+                        help='Do not load rules with these statuses (ex: deprecated,unsupported)')
+    parser.add_argument('--exclude-rules-file', default=None, metavar='FILE',
+                        help='Do not load rules whose id is listed in FILE (format of Hayabusa exclude_rules.txt: one UUID per line, # starts a comment)')
     parser.add_argument('--keep-all-timestamps', action='store_true', help='JSON Lines input: keep every timestamp row of an EVTX record instead of only "Creation Time"')
     parser.add_argument('--edge-order', choices=['time', 'file'], default='time', help='Order transitions by timestamp (default) or by input row order')
     parser.add_argument('--temporal-output', default=None, help='Also write a GraphML with one edge per transition (timestamps, delta, source rows)')
@@ -1229,6 +1283,8 @@ def main():
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+    if args.exclude_rules_file and not os.path.isfile(args.exclude_rules_file):
+        parser.error(f"--exclude-rules-file: {args.exclude_rules_file} not found")
 
     if os.path.exists(args.file):
         pipeline = ReconGraph(
@@ -1237,7 +1293,9 @@ def main():
             flexible_mode=not args.strict,
             keep_all_timestamps=args.keep_all_timestamps,
             edge_order=args.edge_order,
-            node_mode=args.node
+            node_mode=args.node,
+            exclude_status=args.exclude_status,
+            exclude_rules_file=args.exclude_rules_file
         )
 
         pipeline.run_all(

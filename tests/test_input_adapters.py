@@ -324,7 +324,8 @@ CSV_BASELINE = {
     ("1/failed-login.csv", False): (2001, 0, 0, 0),
     ("2/windows-firewall-disabled-evtx.csv", True): (2000, 0, 0, 0),
     ("2/windows-firewall-disabled-evtx.csv", False): (2000, 0, 0, 0),
-    ("3/4616-with-regex.csv", True): (2001, 0, 0, 0),
+    # flexible: a `not filter` on fields this CSV does not have fires, as in Hayabusa
+    ("3/4616-with-regex.csv", True): (2001, 2, 1, 1),
     # strict: the 2 "Relevant Anti-Virus Signature Keywords In Application Log" rows were a logsource false positive
     ("3/4616-with-regex.csv", False): (2001, 0, 0, 0),
 }

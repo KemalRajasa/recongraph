@@ -230,6 +230,8 @@ docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
 | `--edge-order {time,file}` | Order transitions by timestamp (ties keep row order) or by input row order (the original behavior). | `time` |
 | `--temporal-output` | Also write a GraphML with one edge per transition. | none |
 | `--node {drain,sigma}` | Node identity, see [Node Modes](#node-modes). | `drain` |
+| `--exclude-status` | Do not load rules with these statuses, comma separated (ex: `deprecated,unsupported`). | none |
+| `--exclude-rules-file` | Do not load rules whose `id` is listed in this file (format of Hayabusa `exclude_rules.txt`: one UUID per line, `#` starts a comment). | none |
 
 ## Node Modes
 
@@ -331,12 +333,14 @@ The tool generates the following files:
 - **Sigma Labeled CSV** (`<filename>_sigma_labeled.csv`, with `--export-sigma`):
   The input log file augmented with matching Sigma rule titles and severity levels:
   `sigma` holds the primary label (highest severity, ties broken alphabetically by label) and
-  `sigma_all` every matching rule, sorted and separated by ` | `. Rules that use a field modifier
+  `sigma_all` every matching rule, sorted and separated by ` | `; `sigma_ids` the `id` of every matching rule, sorted
+  by ID and separated by ` | ` (not aligned with `sigma_all`, where rules with the same title and level are one label).
+  Rules that use a field modifier
   ReconGraph does not implement are skipped with a warning when the rules are loaded.
   With `--node=drain` also `event_key` and `sigma_level`.
 - **Run Metadata** (`<graph>.meta.json`, next to each GraphML): the configuration of the run, in a sidecar
   so that GraphML stays plain and `--node=sigma` output stays identical to earlier versions: `node_mode`, `edge_order`,
-  `input_file`, `sigma_rules_path`, `sigma_matching`, `keep_all_timestamps`, `recongraph_version`, `rows_total`,
+  `input_file`, `sigma_rules_path`, `sigma_matching`, `sigma_rules` (rules loaded, skipped per reason, and the exclude options), `keep_all_timestamps`, `recongraph_version`, `rows_total`,
   `rows_in_graph`, under `event_sources` how each source was treated and its row count (`evtx`, `structured`, `free_text`;
   the source is the `data_type`, or `parser` for Plaso CSV; empty with `--node=sigma`), and under `drain3` the version, the
   configuration (`sim_th`, `depth`, `max_children`, masking) and a snapshot of each template miner. The same input and
