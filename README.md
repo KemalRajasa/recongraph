@@ -313,7 +313,8 @@ The tool generates the following files:
 
 - **GraphML File** (`reconstruction_edge_graph.graphml`): A directed graph where
   nodes are kinds of events and edges represent the flow between them. Suitable
-  for the bundled visualizer, Gephi, or Cytoscape. Each edge carries `weight`
+  for the bundled visualizer, Gephi, or Cytoscape. Each edge carries `label`
+  (always `NEXT`, the relationship type when imported into Neo4j), `weight`
   (number of transitions), `first_seen`/`last_seen` (ISO 8601 UTC, plus `_us`
   epoch microseconds) and `delta_min_us`/`delta_median_us`/`delta_max_us`; nodes
   carry `first_seen`/`last_seen` too. Time attributes are omitted when timestamps
@@ -321,7 +322,7 @@ The tool generates the following files:
   `sigma_hits` (rows with a Sigma annotation), `sigma_rules` (unique, sorted, separated
   by ` | `) and `sigma_max_level`, and have no `level`; with `--node=sigma` they carry `level`.
 - **Temporal GraphML** (with `--temporal-output <path>`): the same nodes with one
-  edge per consecutive transition: `seq`, `t_src`/`t_dst` (+ `_us`), `delta_us`,
+  edge per consecutive transition: `label` (as above), `seq`, `t_src`/`t_dst` (+ `_us`), `delta_us`,
   and `src_row`/`dst_row` (row index in the Sigma-labeled data). With `--node=drain`
   also `src_level`/`dst_level`: the Sigma level of the two rows, empty when not annotated.
 - **Event Logs CSV** (`reconstruction_event_logs.csv`, with `--export-csv`): A
@@ -339,7 +340,7 @@ The tool generates the following files:
   ReconGraph does not implement are skipped with a warning when the rules are loaded.
   With `--node=drain` also `event_key` and `sigma_level`.
 - **Run Metadata** (`<graph>.meta.json`, next to each GraphML): the configuration of the run, in a sidecar
-  so that GraphML stays plain and `--node=sigma` output stays identical to earlier versions: `node_mode`, `edge_order`,
+  so that GraphML stays plain and `--node=sigma` output differs from earlier versions only by the edge `label`: `node_mode`, `edge_order`,
   `input_file`, `sigma_rules_path`, `sigma_matching`, `sigma_rules` (rules loaded, skipped per reason, and the exclude options), `keep_all_timestamps`, `recongraph_version`, `rows_total`,
   `rows_in_graph`, under `event_sources` how each source was treated and its row count (`evtx`, `structured`, `free_text`;
   the source is the `data_type`, or `parser` for Plaso CSV; empty with `--node=sigma`), and under `drain3` the version, the

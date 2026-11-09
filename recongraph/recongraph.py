@@ -28,6 +28,7 @@ from recongraph.input_adapters import GENERIC_COLUMNS, detect_input_format, load
 logger = logging.getLogger(__name__)
 
 NODE_MODES = ("drain", "sigma")
+EDGE_LABEL = "NEXT"  # relationship type of every edge when a GraphML file is imported into Neo4j
 SIGMA_LEVELS = {"critical": 5, "high": 4, "medium": 3, "low": 2, "informational": 1}
 _WINDASH = ("-", "/", "\u2013", "\u2014", "\u2015")  # Sigma windash: -, /, en dash, em dash, horizontal bar
 
@@ -1078,6 +1079,20 @@ class EdgeGraph(object):
         """
         self.G.add_edges_from(self.edges_weight_list)
 
+    @staticmethod
+    def _with_edge_labels(graph):
+        """
+        Return a copy of ``graph`` whose edges have ``label`` as their first attribute.
+
+        apoc.import.graphml drops the first <data> of an <edge> that has no ``label``, which would lose
+        ``weight`` or ``seq``. The attribute comes first so that it is the one consumed by the import.
+        """
+        labeled = graph.__class__()
+        labeled.graph.update(graph.graph)
+        labeled.add_nodes_from(graph.nodes(data=True))
+        labeled.add_edges_from((u, v, key, {"label": EDGE_LABEL, **data}) for u, v, key, data in graph.edges(keys=True, data=True))
+        return labeled
+
     def write_to_graphml(self, output_filename="reconstruction_edge_graph.graphml", graph=None):
         """
         Save the graph to a GraphML file.
@@ -1087,7 +1102,7 @@ class EdgeGraph(object):
         """
         graph = self.G if graph is None else graph
         filename_graph_output = output_filename
-        nx.write_graphml_lxml(graph, filename_graph_output)
+        nx.write_graphml_lxml(self._with_edge_labels(graph), filename_graph_output)
         print(f"[!] Graph saved to {filename_graph_output}")
         print(f"[!] Graph contains {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
 

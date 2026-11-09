@@ -179,7 +179,7 @@ most ``k`` edges (``--max-len``, default 8) in a graph written with ``--temporal
 ``--src``/``--dst`` accept a node id, an exact label or a unique label substring. ``--cap`` limits the number of
 paths per method and sets ``truncated`` when reached. The functions (``dfs_paths``, ``time_respecting_paths``,
 ``replay_paths``, ``compare``) also accept graphs loaded from an ``EdgeGraph`` via ``load_graphs(edge_graph)``.
-Neo4j equivalents (import with ``apoc.import.graphml`` and ``{storeNodeIds: true, defaultRelationshipType: 'NEXT'}``)
+Neo4j equivalents (import with ``apoc.import.graphml`` and ``{readLabels: true, storeNodeIds: true, defaultRelationshipType: 'NEXT'}``)
 are in ``docs/cypher/``. Both work in both node modes; with ``--node=drain`` a label is an event identity such as
 ``Microsoft-Windows-Sysmon:1``. ``window_around_sigma.cypher`` anchors on annotated rows (``src_level``/``dst_level`` on the
 temporal edges with ``--node=drain``, the node's ``level`` with ``--node=sigma``).
