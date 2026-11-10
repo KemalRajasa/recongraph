@@ -10,6 +10,10 @@ Unreleased
   with byte-identical GraphML files.
 - ``--export-csv`` has an ``event_key`` column; ``<graph>.meta.json`` records the configuration of each run.
 - New dependency: ``drain3==0.9.11``.
+- **Changed output:** each run writes to one folder, ``-o``/``--output-dir`` (default ``recongraph_output/<input>_<node mode>``), with
+  ``recongraph_agg.graphml``, ``recongraph_temporal.graphml`` and ``recongraph_meta.json`` always present. ``--export-events`` replaces
+  ``--export-csv``, ``--export-sigma`` takes no value, ``--temporal-output`` is removed, and ``recongraph_meta.json`` replaces the
+  ``<graph>.meta.json`` files mentioned above. An earlier run in the folder stops the run unless ``--overwrite`` is given.
 
 v0.0.3
 ------

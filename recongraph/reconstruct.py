@@ -218,8 +218,8 @@ def parse_duration(text) -> int:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Reconstruct paths between two events of a ReconGraph graph.")
-    parser.add_argument("--temporal", required=True, help="temporal GraphML (recongraph --temporal-output)")
-    parser.add_argument("--agg", help="aggregate GraphML (-o); default: aggregate built from --temporal")
+    parser.add_argument("--temporal", required=True, help="temporal GraphML (recongraph_temporal.graphml)")
+    parser.add_argument("--agg", help="aggregate GraphML (recongraph_agg.graphml); default: aggregate built from --temporal")
     parser.add_argument("--src", required=True, help="source node: id, exact label or unique label substring")
     parser.add_argument("--dst", required=True, help="destination node: id, exact label or unique label substring")
     parser.add_argument("--mode", choices=["dfs", "time", "replay", "compare"], default="compare")

@@ -33,7 +33,7 @@ def _keys(path):
 def _run(tmp_path, input_file=SAMPLE, node_mode="drain", rules=RULES, **kwargs):
     """Full pipeline, strict; returns the output paths."""
     paths = {"graph_output": str(tmp_path / "agg.graphml"), "temporal_output": str(tmp_path / "temporal.graphml"),
-             "csv_output": str(tmp_path / "events.csv")}
+             "csv_output": str(tmp_path / "events.csv"), "metadata_output": str(tmp_path / "meta.json")}
     ReconGraph(str(input_file), rules, flexible_mode=False, node_mode=node_mode, **kwargs).run_all(**paths)
     return paths
 
@@ -193,7 +193,7 @@ def test_sample_csv_maps_every_row_with_evtx_key(tmp_path):
     csv = REPO / "dataset" / "1" / "failed-login.csv"
     paths = _run(tmp_path, csv, rules=None)
     source = pd.read_csv(csv, dtype=str)
-    meta = json.loads(Path(paths["graph_output"] + ".meta.json").read_text(encoding="utf-8"))
+    meta = json.loads(Path(paths["metadata_output"]).read_text(encoding="utf-8"))
     assert meta["rows_in_graph"] == meta["rows_total"] == len(source)
     assert meta["drain3"]["miners"] == {}
     events = pd.read_csv(paths["csv_output"], dtype=str)
@@ -221,7 +221,7 @@ def test_sigma_mode_identical_to_base(tmp_path, fixture):
 
 def test_sigma_mode_maps_only_labeled_rows(tmp_path):
     paths = _run(tmp_path, node_mode="sigma")
-    meta = json.loads(Path(paths["graph_output"] + ".meta.json").read_text(encoding="utf-8"))
+    meta = json.loads(Path(paths["metadata_output"]).read_text(encoding="utf-8"))
     assert meta["rows_in_graph"] < meta["rows_total"]
     assert meta["drain3"] is None and meta["event_sources"] is None
     node = next(iter(nx.read_graphml(paths["graph_output"]).nodes(data=True)))[1]
@@ -324,28 +324,27 @@ def test_source_without_sigma_rules_gets_a_graph_and_no_marker(tmp_path):
 
 def test_metadata_is_complete(tmp_path):
     paths = _run(tmp_path, PLASO / "linux_auth.jsonl", edge_order="file")
-    for graph in (paths["graph_output"], paths["temporal_output"]):
-        meta = json.loads(Path(graph + ".meta.json").read_text(encoding="utf-8"))
-        assert meta["node_mode"] == "drain" and meta["edge_order"] == "file"
-        assert meta["sigma_rules_path"] == RULES and meta["sigma_matching"] == "strict"
-        assert meta["input_file"] == str(PLASO / "linux_auth.jsonl")
-        assert meta["recongraph_version"] and meta["keep_all_timestamps"] is False
-        assert meta["rows_in_graph"] == meta["rows_total"] == 6
-        drain3 = meta["drain3"]
-        assert drain3["version"] == "0.9.11"
-        assert {k: drain3["config"][k] for k in DRAIN3_CONFIG} == DRAIN3_CONFIG
-        assert [m["mask_with"] for m in drain3["config"]["masking"]] == [name for name, _ in DRAIN3_MASKING]
-        assert list(drain3["miners"]) == ["syslog:line"]
-        assert meta["event_sources"] == {
-            "evtx": {},
-            "structured": {"syslog:ssh:failed_connection": 1, "syslog:ssh:login": 2, "syslog:ssh:opened_connection": 1},
-            "free_text": {"syslog:line": 2},
-        }
+    meta = json.loads(Path(paths["metadata_output"]).read_text(encoding="utf-8"))
+    assert meta["node_mode"] == "drain" and meta["edge_order"] == "file"
+    assert meta["sigma_rules_path"] == RULES and meta["sigma_matching"] == "strict"
+    assert meta["input_file"] == str(PLASO / "linux_auth.jsonl")
+    assert meta["recongraph_version"] and meta["keep_all_timestamps"] is False
+    assert meta["rows_in_graph"] == meta["rows_total"] == 6
+    drain3 = meta["drain3"]
+    assert drain3["version"] == "0.9.11"
+    assert {k: drain3["config"][k] for k in DRAIN3_CONFIG} == DRAIN3_CONFIG
+    assert [m["mask_with"] for m in drain3["config"]["masking"]] == [name for name, _ in DRAIN3_MASKING]
+    assert list(drain3["miners"]) == ["syslog:line"]
+    assert meta["event_sources"] == {
+        "evtx": {},
+        "structured": {"syslog:ssh:failed_connection": 1, "syslog:ssh:login": 2, "syslog:ssh:opened_connection": 1},
+        "free_text": {"syslog:line": 2},
+    }
 
 
 def test_event_sources_account_for_every_row(tmp_path):
     paths = _run(tmp_path)
-    meta = json.loads(Path(paths["graph_output"] + ".meta.json").read_text(encoding="utf-8"))
+    meta = json.loads(Path(paths["metadata_output"]).read_text(encoding="utf-8"))
     sources = meta["event_sources"]
     assert list(sources["evtx"]) == ["windows:evtx:record"] and list(sources["structured"]) == ["fs:stat"]
     assert sum(n for counts in sources.values() for n in counts.values()) == meta["rows_total"]
@@ -362,7 +361,7 @@ def test_metadata_without_an_installed_package(tmp_path, monkeypatch):
         raise PackageNotFoundError(name)
     monkeypatch.setattr("recongraph.recongraph.version", not_installed)
     paths = _run(tmp_path, PLASO / "android_sms.jsonl", rules=None)
-    assert json.loads(Path(paths["graph_output"] + ".meta.json").read_text(encoding="utf-8"))["recongraph_version"] == "unknown"
+    assert json.loads(Path(paths["metadata_output"]).read_text(encoding="utf-8"))["recongraph_version"] == "unknown"
 
 
 def test_snapshot_restores_the_miner(tmp_path):
@@ -384,28 +383,27 @@ def test_same_configuration_gives_the_same_output(tmp_path, input_file):
         outputs.append(_run(out, input_file))
     for name in ("graph_output", "temporal_output", "csv_output"):
         assert Path(outputs[0][name]).read_bytes() == Path(outputs[1][name]).read_bytes()
-    assert Path(outputs[0]["graph_output"] + ".meta.json").read_bytes() == Path(outputs[1]["graph_output"] + ".meta.json").read_bytes()
+    assert Path(outputs[0]["metadata_output"]).read_bytes() == Path(outputs[1]["metadata_output"]).read_bytes()
 
 
 def test_same_output_across_processes(tmp_path):
     """Hash randomization differs per process; identity and GraphML must not depend on it."""
     outputs = []
     for run in ("1", "2"):
-        path = tmp_path / run / "g.graphml"
-        path.parent.mkdir()
-        subprocess.run([sys.executable, "-m", "recongraph.recongraph", "-f", str(PLASO / "linux_auth.jsonl"), "-o", str(path)],
+        out = tmp_path / run
+        subprocess.run([sys.executable, "-m", "recongraph.recongraph", "-f", str(PLASO / "linux_auth.jsonl"), "-o", str(out)],
                        check=True, capture_output=True, env={**os.environ, "PYTHONHASHSEED": run})
-        outputs.append((path.read_bytes(), Path(f"{path}.meta.json").read_bytes()))
+        outputs.append(tuple((out / name).read_bytes() for name in ("recongraph_agg.graphml", "recongraph_temporal.graphml", "recongraph_meta.json")))
     assert outputs[0] == outputs[1]
 
 
 # CLI
 
 def test_cli_default_is_drain(tmp_path, monkeypatch):
-    out = tmp_path / "g.graphml"
+    out = tmp_path / "run"
     monkeypatch.setattr(sys, "argv", ["recongraph", "-f", str(PLASO / "android_sms.jsonl"), "-o", str(out)])
     main()
-    assert json.loads(Path(f"{out}.meta.json").read_text(encoding="utf-8"))["node_mode"] == "drain"
+    assert json.loads((out / "recongraph_meta.json").read_text(encoding="utf-8"))["node_mode"] == "drain"
 
 
 def test_cli_rejects_unknown_node_mode(tmp_path, monkeypatch, capsys):

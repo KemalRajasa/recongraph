@@ -29,6 +29,13 @@ logger = logging.getLogger(__name__)
 
 NODE_MODES = ("drain", "sigma")
 EDGE_LABEL = "NEXT"  # relationship type of every edge when a GraphML file is imported into Neo4j
+# Files of one run, inside its output folder
+AGG_GRAPH_FILE = "recongraph_agg.graphml"
+TEMPORAL_GRAPH_FILE = "recongraph_temporal.graphml"
+METADATA_FILE = "recongraph_meta.json"
+EVENTS_CSV_FILE = "recongraph_events.csv"
+SIGMA_CSV_FILE = "recongraph_sigma.csv"
+OUTPUT_FILES = (AGG_GRAPH_FILE, TEMPORAL_GRAPH_FILE, METADATA_FILE, EVENTS_CSV_FILE, SIGMA_CSV_FILE)
 # Sigma tag -> ATT&CK Enterprise tactic, in matrix order; TA0005 was named Defense Evasion before it became Stealth
 MITRE_TACTICS = {
     "attack.reconnaissance": "Reconnaissance",
@@ -1148,7 +1155,7 @@ class EdgeGraph(object):
         labeled.add_edges_from((u, v, key, {"label": EDGE_LABEL, **data}) for u, v, key, data in graph.edges(keys=True, data=True))
         return labeled
 
-    def write_to_graphml(self, output_filename="reconstruction_edge_graph.graphml", graph=None):
+    def write_to_graphml(self, output_filename=AGG_GRAPH_FILE, graph=None):
         """
         Save the graph to a GraphML file.
 
@@ -1161,7 +1168,7 @@ class EdgeGraph(object):
         print(f"[!] Graph saved to {filename_graph_output}")
         print(f"[!] Graph contains {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
 
-    def export_event_logs(self, output_filename="reconstruction_event_logs.csv"):
+    def export_event_logs(self, output_filename=EVENTS_CSV_FILE):
         """
         Exports detailed event logs to a separate CSV file.
 
@@ -1197,7 +1204,14 @@ class EdgeGraph(object):
         else:
              print("[!] No event logs to export.")
 
-    def run_all(self, graph_output="reconstruction_edge_graph.graphml", csv_output=None, temporal_output=None):
+    def _write_graphs(self, graph_output, temporal_output):
+        self.write_to_graphml(graph_output)
+        if temporal_output:
+            print("[+] Writing Temporal Graph")
+            self.create_temporal_graph()
+            self.write_to_graphml(temporal_output, self.T)
+
+    def run_all(self, graph_output=AGG_GRAPH_FILE, csv_output=None, temporal_output=None):
         """
         Execute the full graph construction pipeline.
 
@@ -1210,7 +1224,8 @@ class EdgeGraph(object):
         6. Writing Output (plus the per-transition graph when ``temporal_output`` is set)
         """
         if self.df.empty:
-            print("[!] DataFrame is empty. Cannot build graph.")
+            print("[!] DataFrame is empty. Graph will be empty.")
+            self._write_graphs(graph_output, temporal_output)
             return
 
         print("[+] Defining Events")
@@ -1218,6 +1233,7 @@ class EdgeGraph(object):
         
         if not self.events_dict:
             print("[!] No Sigma events found. Graph will be empty.")
+            self._write_graphs(graph_output, temporal_output)
             return
 
         print("[+] Creating Graph Nodes")
@@ -1235,12 +1251,7 @@ class EdgeGraph(object):
         self.add_edges_to_graph()
         
         print("[+] Writing Output")
-        self.write_to_graphml(graph_output)
-
-        if temporal_output:
-            print("[+] Writing Temporal Graph")
-            self.create_temporal_graph()
-            self.write_to_graphml(temporal_output, self.T)
+        self._write_graphs(graph_output, temporal_output)
 
         if csv_output:
             print("[+] Exporting Event Logs")
@@ -1266,8 +1277,8 @@ class ReconGraph(object):
         self.edge_order = edge_order
         self.node_mode = node_mode
 
-    def _write_metadata(self, reconstruction, graph_paths, rules_loader):
-        """Write the run's configuration next to each graph, as ``<graph>.meta.json``."""
+    def _write_metadata(self, reconstruction, path, rules_loader):
+        """Write the run's configuration to ``path``."""
         try:
             recongraph_version = version("recongraph")
         except PackageNotFoundError:  # running from a source checkout
@@ -1286,13 +1297,12 @@ class ReconGraph(object):
             "event_sources": reconstruction.event_sources,
             "drain3": reconstruction.drain3,
         }
-        for path in graph_paths:
-            with open(f"{path}.meta.json", "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=1)
-            print(f"[!] Run metadata saved to {path}.meta.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=1)
+        print(f"[!] Run metadata saved to {path}")
 
-    def run_all(self, graph_output="reconstruction_edge_graph.graphml",
-                csv_output=None, sigma_output=None, temporal_output=None):
+    def run_all(self, graph_output=AGG_GRAPH_FILE,
+                csv_output=None, sigma_output=None, temporal_output=None, metadata_output=None):
         """
         Executes the full pipeline.
         
@@ -1311,20 +1321,30 @@ class ReconGraph(object):
         reconstruction = EdgeGraph(df_labeled, edge_order=self.edge_order, node_mode=self.node_mode)
 
         if sigma_output:
-            if sigma_output == 'AUTO':
-                base_name = os.path.splitext(os.path.basename(self.input_file))[0]
-                final_sigma_output = f"{base_name}_sigma_labeled.csv"
-            else:
-                final_sigma_output = sigma_output
-                
-            (df_labeled if self.node_mode == "sigma" else reconstruction.df).to_csv(final_sigma_output, index=False)
-            print(f"Sigma-labeled data exported to: {final_sigma_output}")
+            (df_labeled if self.node_mode == "sigma" else reconstruction.df).to_csv(sigma_output, index=False)
+            print(f"Sigma-labeled data exported to: {sigma_output}")
             
         print("\n[Phase 2] Edge Graph Construction")
         reconstruction.run_all(graph_output=graph_output, csv_output=csv_output, temporal_output=temporal_output)
-        if reconstruction.G.number_of_nodes():
-            self._write_metadata(reconstruction, [graph_output, *([temporal_output] if temporal_output else [])], labeler.rules_loader)
+        if metadata_output:
+            self._write_metadata(reconstruction, metadata_output, labeler.rules_loader)
         print("\n[+] Pipeline Completed Successfully")
+
+
+def default_output_dir(input_file, node_mode) -> str:
+    return os.path.join("recongraph_output", f"{os.path.splitext(os.path.basename(input_file))[0]}_{node_mode}")
+
+
+def prepare_output_dir(output_dir, overwrite) -> None:
+    """Create the run's folder. An earlier run's files stop the run (ValueError) unless ``overwrite`` removes them; other files are kept."""
+    if os.path.exists(output_dir) and not os.path.isdir(output_dir):
+        raise ValueError(f"{output_dir} exists and is not a folder")
+    existing = [name for name in OUTPUT_FILES if os.path.exists(os.path.join(output_dir, name))]
+    if existing and not overwrite:
+        raise ValueError(f"{output_dir} already contains output: {', '.join(existing)}. Use another folder or --overwrite.")
+    for name in existing:
+        os.remove(os.path.join(output_dir, name))
+    os.makedirs(output_dir, exist_ok=True)
 
 
 def main():
@@ -1334,10 +1354,12 @@ def main():
     """
     parser = argparse.ArgumentParser(description='Reconstruct a graph from forensic timeline.')
     parser.add_argument('-f', '--file', required=True, help='Path to the input file (Plaso CSV, Plaso JSON Lines, or TXT)')
-    parser.add_argument('-o', '--output', help='Output filename for the GraphML file', default='reconstruction_edge_graph.graphml')
+    parser.add_argument('-o', '--output-dir', metavar='DIR', default=None,
+                        help='Folder of this run, created if missing (default: recongraph_output/<input>_<node mode>)')
     parser.add_argument('-r', '--rules', help='Path to the rules directory (defaults to the SIGMA_RULES_PATH environment variable if set)', default=os.environ.get('SIGMA_RULES_PATH'))
-    parser.add_argument('--export-csv', nargs='?', const='reconstruction_event_logs.csv', default=None, help='Export detailed event logs to a separate CSV file')
-    parser.add_argument('--export-sigma', nargs='?', const='AUTO', default=None, help='Export the sigma-labeled DataFrame to a CSV file')
+    parser.add_argument('--export-events', action='store_true', help=f'Also write the log rows of every graph node to {EVENTS_CSV_FILE}')
+    parser.add_argument('--export-sigma', action='store_true', help=f'Also write the input with its Sigma annotation to {SIGMA_CSV_FILE}')
+    parser.add_argument('--overwrite', action='store_true', help='Replace the output of an earlier run in the folder; other files are kept')
     parser.add_argument('--strict', action='store_true', help='Disable flexible matching mode (strict validation)')
     parser.add_argument('--exclude-status', type=lambda v: [s.strip() for s in v.split(',') if s.strip()], default=[], metavar='STATUS[,STATUS...]',
                         help='Do not load rules with these statuses (ex: deprecated,unsupported)')
@@ -1345,7 +1367,6 @@ def main():
                         help='Do not load rules whose id is listed in FILE')
     parser.add_argument('--keep-all-timestamps', action='store_true', help='JSON Lines input: keep every timestamp row of an EVTX record instead of only "Creation Time"')
     parser.add_argument('--edge-order', choices=['time', 'file'], default='time', help='Order transitions by timestamp (default) or by input row order')
-    parser.add_argument('--temporal-output', default=None, help='Also write a GraphML with one edge per transition (timestamps, delta, source rows)')
     parser.add_argument('--node', choices=NODE_MODES, default='drain',
                         help='Node identity. drain (default): every row is mapped, as Provider:EventID for EVTX, data_type:timestamp_desc for '
                              'structured artefacts, a Drain3 template for free text; Sigma is stored as an annotation. '
@@ -1355,8 +1376,16 @@ def main():
     logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
     if args.exclude_rules_file and not os.path.isfile(args.exclude_rules_file):
         parser.error(f"--exclude-rules-file: {args.exclude_rules_file} not found")
+    if args.output_dir and args.output_dir.endswith('.graphml'):
+        parser.error(f"-o takes a folder, not a GraphML file: {args.output_dir}")
 
     if os.path.exists(args.file):
+        output_dir = args.output_dir or default_output_dir(args.file, args.node)
+        try:
+            prepare_output_dir(output_dir, args.overwrite)
+        except ValueError as error:
+            parser.error(str(error))
+
         pipeline = ReconGraph(
             input_file=args.file,
             rules_dir=getattr(args, 'rules', None),
@@ -1369,10 +1398,11 @@ def main():
         )
 
         pipeline.run_all(
-            graph_output=args.output,
-            csv_output=args.export_csv,
-            sigma_output=args.export_sigma,
-            temporal_output=args.temporal_output
+            graph_output=os.path.join(output_dir, AGG_GRAPH_FILE),
+            temporal_output=os.path.join(output_dir, TEMPORAL_GRAPH_FILE),
+            metadata_output=os.path.join(output_dir, METADATA_FILE),
+            csv_output=os.path.join(output_dir, EVENTS_CSV_FILE) if args.export_events else None,
+            sigma_output=os.path.join(output_dir, SIGMA_CSV_FILE) if args.export_sigma else None,
         )
             
     else:

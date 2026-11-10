@@ -167,11 +167,10 @@ def test_negated_selection_with_missing_fields_fires(tmp_path):
 # --- run metadata and CLI ---
 
 def _run_cli(tmp_path, monkeypatch, *extra):
-    out = tmp_path / "g.graphml"
-    sigma = tmp_path / "labeled.csv"
-    monkeypatch.setattr(sys, "argv", ["recongraph", "-f", str(SYSMON_JSONL), "-o", str(out), "--strict", "--export-sigma", str(sigma), *extra])
+    out = tmp_path / "run"
+    monkeypatch.setattr(sys, "argv", ["recongraph", "-f", str(SYSMON_JSONL), "-o", str(out), "--strict", "--export-sigma", *extra])
     main()
-    return json.loads(Path(f"{out}.meta.json").read_text(encoding="utf-8")), pd.read_csv(sigma, dtype=str, keep_default_na=False)
+    return json.loads((out / "recongraph_meta.json").read_text(encoding="utf-8")), pd.read_csv(out / "recongraph_sigma.csv", dtype=str, keep_default_na=False)
 
 
 def test_cli_writes_rule_selection_to_metadata(rules, exclude_file, tmp_path, monkeypatch):
@@ -195,7 +194,7 @@ def test_cli_rejects_missing_exclude_file(rules, tmp_path, monkeypatch):
 
 def test_metadata_defaults_without_filters(rules, tmp_path):
     out = tmp_path / "g.graphml"
-    ReconGraph(str(SYSMON_JSONL), str(rules), flexible_mode=False).run_all(graph_output=str(out))
-    meta = json.loads(Path(f"{out}.meta.json").read_text(encoding="utf-8"))
+    ReconGraph(str(SYSMON_JSONL), str(rules), flexible_mode=False).run_all(graph_output=str(out), metadata_output=str(tmp_path / "meta.json"))
+    meta = json.loads((tmp_path / "meta.json").read_text(encoding="utf-8"))
     assert meta["sigma_rules"]["loaded"] == 4 and meta["sigma_rules"]["exclude_status"] == []
     assert meta["sigma_rules"]["exclude_rules_file"] is None

@@ -163,17 +163,18 @@ Sigma rules are released under the
 ```bash
 recongraph -f /path/to/plaso-file.csv \
            -r /path/to/sigma/rules \
-           -o reconstruction_edge_graph.graphml
+           -o result
 ```
 
-Add `--export-csv` and `--export-sigma` to also produce the detailed event-log
-CSV and the Sigma-labeled CSV:
+This writes `recongraph_agg.graphml`, `recongraph_temporal.graphml` and
+`recongraph_meta.json` to the folder `result`. Add `--export-events` and
+`--export-sigma` to also produce the detailed event-log CSV and the Sigma-labeled CSV:
 
 ```bash
 recongraph -f forensic_timeline.csv \
            -r ./sigma/rules \
-           -o result.graphml \
-           --export-csv \
+           -o result \
+           --export-events \
            --export-sigma
 ```
 
@@ -187,14 +188,14 @@ bundled Sigma Core rules are used automatically (via `SIGMA_RULES_PATH`), so no
 # Linux / macOS
 docker run --rm -v "$(pwd)/data:/app/data" recongraph \
   -f forensic_timeline.csv \
-  -o result.graphml \
-  --export-csv \
+  -o result \
+  --export-events \
   --export-sigma
 
 # Windows (PowerShell)
 docker run --rm -v "${PWD}\data:/app/data" recongraph `
   -f forensic_timeline.csv `
-  -o result.graphml
+  -o result
 ```
 
 To use **your own** rules instead, mount them as an extra volume and point `-r`
@@ -210,7 +211,7 @@ docker run --rm \
 Alternatively, use **Docker Compose** (mounts `./data` automatically):
 
 ```bash
-docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
+docker compose run --rm recongraph -f forensic_timeline.csv -o result
 ```
 
 > `--rm` removes the container after it finishes. All output files are written
@@ -222,13 +223,13 @@ docker compose run --rm recongraph -f forensic_timeline.csv -o result.graphml
 |--------|-------------|---------|
 | `-f`, `--file` | Path to the input file (Plaso CSV, Plaso JSON Lines, or TXT). **Required.** | — |
 | `-r`, `--rules` | Path to the Sigma rules directory. | `$SIGMA_RULES_PATH` if set, else none |
-| `-o`, `--output` | Output filename for the GraphML file. | `reconstruction_edge_graph.graphml` |
-| `--export-csv` | Also export detailed event logs to a CSV file. | `reconstruction_event_logs.csv` |
-| `--export-sigma` | Also export the Sigma-labeled DataFrame to a CSV file. | `<input>_sigma_labeled.csv` |
+| `-o`, `--output-dir` | Folder of this run, created if missing. See [Output](#output). | `recongraph_output/<input>_<node mode>` |
+| `--export-events` | Also write `recongraph_events.csv`, the log rows of every graph node. | off |
+| `--export-sigma` | Also write `recongraph_sigma.csv`, the input with its Sigma annotation. | off |
+| `--overwrite` | Replace the output of an earlier run in the folder. Without it the run stops before writing. Other files are kept. | off |
 | `--strict` | Strict logsource validation (category, product and service must match). Without it (flexible mode) only `product` is checked, and only keyword selections fall back to the whole message. | flexible mode |
 | `--keep-all-timestamps` | JSON Lines input: keep every timestamp row of an EVTX record (by default only `Creation Time` is kept). | off |
 | `--edge-order {time,file}` | Order transitions by timestamp (ties keep row order) or by input row order (the original behavior). | `time` |
-| `--temporal-output` | Also write a GraphML with one edge per transition. | none |
 | `--node {drain,sigma}` | Node identity, see [Node Modes](#node-modes). | `drain` |
 | `--exclude-status` | Do not load rules with these statuses, comma separated (ex: `deprecated,unsupported`). | none |
 | `--exclude-rules-file` | Do not load rules whose `id` is listed in this file (format of Hayabusa `exclude_rules.txt`: one UUID per line, `#` starts a comment). | none |
@@ -309,9 +310,10 @@ logic used to label events. See [Sigma Rules Setup](#sigma-rules-setup).
 
 ## Output
 
-The tool generates the following files:
+Each run writes to one folder, with fixed file names. In both node modes the two graphs and the metadata are always
+written, also when the graphs are empty (`--node=sigma` without a detection):
 
-- **GraphML File** (`reconstruction_edge_graph.graphml`): A directed graph where
+- **Aggregate GraphML** (`recongraph_agg.graphml`): A directed graph where
   nodes are kinds of events and edges represent the flow between them. Suitable
   for the bundled visualizer, Gephi, or Cytoscape. Each edge carries `label`
   (always `NEXT`, the relationship type when imported into Neo4j), `weight`
@@ -324,17 +326,17 @@ The tool generates the following files:
   are missing or invalid. With `--node=drain` nodes also carry `event_key`, `row_count`,
   `sigma_hits` (rows with a Sigma annotation), `sigma_rules` (unique, sorted, separated
   by ` | `) and `sigma_max_level`, and have no `level`; with `--node=sigma` they carry `level`.
-- **Temporal GraphML** (with `--temporal-output <path>`): the same nodes with one
+- **Temporal GraphML** (`recongraph_temporal.graphml`): the same nodes with one
   edge per consecutive transition: `label` (as above), `seq`, `t_src`/`t_dst` (+ `_us`), `delta_us`,
   and `src_row`/`dst_row` (row index in the Sigma-labeled data). With `--node=drain`
   also `src_level`/`dst_level`: the Sigma level of the two rows, empty when not annotated.
-- **Event Logs CSV** (`reconstruction_event_logs.csv`, with `--export-csv`): A
+- **Event Logs CSV** (`recongraph_events.csv`, only with `--export-events`): A
   detailed breakdown of every log entry associated with a graph node, including
   timestamps and raw message content, plus `row_index` and `timestamp_us` to trace
   temporal edges back to their log rows and `event_key`, the identity of the row's node, so
   the content of any node can be opened. With `--node=drain` also the row's `sigma`,
   `sigma_all` and `level`.
-- **Sigma Labeled CSV** (`<filename>_sigma_labeled.csv`, with `--export-sigma`):
+- **Sigma Labeled CSV** (`recongraph_sigma.csv`, only with `--export-sigma`):
   The input log file augmented with matching Sigma rule titles and severity levels:
   `sigma` holds the primary label (highest severity, ties broken alphabetically by label) and
   `sigma_all` every matching rule, sorted and separated by ` | `; `sigma_ids` the `id` of every matching rule, sorted
@@ -343,7 +345,7 @@ The tool generates the following files:
   Rules that use a field modifier
   ReconGraph does not implement are skipped with a warning when the rules are loaded.
   With `--node=drain` also `event_key` and `sigma_level`.
-- **Run Metadata** (`<graph>.meta.json`, next to each GraphML): the configuration of the run, in a sidecar
+- **Run Metadata** (`recongraph_meta.json`): the configuration of the run, in a separate file
   so that GraphML stays plain and `--node=sigma` output differs from earlier versions only by the edge `label` and the node `tactics` and `techniques`: `node_mode`, `edge_order`,
   `input_file`, `sigma_rules_path`, `sigma_matching`, `sigma_rules` (rules loaded, skipped per reason, and the exclude options), `keep_all_timestamps`, `recongraph_version`, `rows_total`,
   `rows_in_graph`, under `event_sources` how each source was treated and its row count (`evtx`, `structured`, `free_text`;
@@ -354,11 +356,11 @@ The tool generates the following files:
 ## Reconstructing Paths Between Events
 
 `python -m recongraph.reconstruct` lists the paths between two events of a graph
-written with `--temporal-output` (the aggregate graph from `-o` is optional):
+(the aggregate graph is optional):
 
 ```bash
-recongraph -f timeline.jsonl -r ./sigma/rules/windows --strict -o agg.graphml --temporal-output temporal.graphml
-python -m recongraph.reconstruct --temporal temporal.graphml --agg agg.graphml \
+recongraph -f timeline.jsonl -r ./sigma/rules/windows --strict -o result
+python -m recongraph.reconstruct --temporal result/recongraph_temporal.graphml --agg result/recongraph_agg.graphml \
        --src "Base64 Encoded PowerShell" --dst "Malware Callback" --mode compare --max-len 8 --max-gap 60s
 ```
 
@@ -381,7 +383,7 @@ step or server:
 
 1. Open `recongraph/visualizer.html` in a web browser.
 2. Click **Load GraphML** (or drag the file onto the page) and select your
-   `reconstruction_edge_graph.graphml`.
+   `recongraph_agg.graphml`.
 
 The visualizer provides force-directed, circular, hierarchical, and radial
 layouts, severity filtering, node search, a node inspector, and SVG/JSON export.

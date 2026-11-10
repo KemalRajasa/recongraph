@@ -8,18 +8,19 @@ ReconGraph can be used from the command line to process Plaso CSV files or raw l
 
 .. code-block:: bash
 
-   recongraph [-h] -f FILE [-o OUTPUT] [-r RULES] [--export-csv [EXPORT_CSV]] [--export-sigma [EXPORT_SIGMA]] [--strict] [--keep-all-timestamps]
-              [--edge-order {time,file}] [--temporal-output TEMPORAL_OUTPUT] [--node {drain,sigma}]
+   recongraph [-h] -f FILE [-o DIR] [-r RULES] [--export-events] [--export-sigma] [--overwrite] [--strict] [--keep-all-timestamps]
+              [--edge-order {time,file}] [--node {drain,sigma}]
               [--exclude-status STATUS[,STATUS...]] [--exclude-rules-file FILE]
 
 Arguments:
 ^^^^^^^^^^
 
 *   ``-f``, ``--file``: Path to the input log file (**Plaso CSV**, **Plaso JSON Lines** from ``psort -o json_line``, or raw TXT). **Required**.
-*   ``-o``, ``--output``: Output filename for the GraphML file (default: ``reconstruction_edge_graph.graphml``).
+*   ``-o``, ``--output-dir``: Folder of this run, created if missing (default: ``recongraph_output/<input>_<node mode>``).
 *   ``-r``, ``--rules``: Path to the directory containing **Sigma rules** (.yml files).
-*   ``--export-csv``: Export detailed event logs to a separate CSV file (``reconstruction_event_logs.csv``).
-*   ``--export-sigma``: Export the full sigma-labeled DataFrame to a CSV file.
+*   ``--export-events``: Also write the log rows of every graph node to ``recongraph_events.csv``.
+*   ``--export-sigma``: Also write the input with its Sigma annotation to ``recongraph_sigma.csv``.
+*   ``--overwrite``: Replace the output of an earlier run in the folder. Without it the run stops before writing. Other files are kept.
 *   ``--strict``: Strict logsource validation (category, product and service must match). Flexible mode (default) only
     checks ``product`` and lets only keyword selections fall back to the whole message.
     ``--export-sigma`` writes ``sigma`` (primary label), ``sigma_all`` (every matching rule), ``sigma_ids`` (their rule IDs, sorted),
@@ -27,9 +28,6 @@ Arguments:
 *   ``--keep-all-timestamps``: JSON Lines input only. Keep every timestamp row of an EVTX record instead of only ``Creation Time``.
 *   ``--edge-order {time,file}``: Order transitions by timestamp (default; ties keep row order, rows without a valid
     timestamp stay right after the row they follow) or by input row order (the original behavior).
-*   ``--temporal-output``: Also write a GraphML with one edge per transition (``seq``, ``t_src``/``t_dst`` and their
-    ``_us`` epoch microseconds, ``delta_us``, ``src_row``/``dst_row``). The aggregate graph (``-o``) keeps ``weight`` and
-    adds ``first_seen``/``last_seen`` and ``delta_min_us``/``delta_median_us``/``delta_max_us``.
 *   ``--node {drain,sigma}``: Node identity (default ``drain``), see below.
 *   ``--exclude-status``: Do not load rules with these statuses, comma separated (ex: ``deprecated,unsupported``).
 *   ``--exclude-rules-file``: Do not load rules whose ``id`` is listed in this file (format of Hayabusa ``exclude_rules.txt``: one UUID per line, ``#`` starts a comment).
@@ -51,7 +49,10 @@ Node modes:
 ReconGraph maps events and does not judge them. A Sigma annotation is a starting point for a query; the investigator
 decides which events are of interest. See :doc:`data_format` for the attributes and identity rules.
 
-Each GraphML gets a sidecar ``<graph>.meta.json`` with the run's configuration (node mode, edge order, input file, rule
+Each run writes to one folder, in both node modes and also when the graphs are empty: ``recongraph_agg.graphml`` (``weight``,
+``first_seen``/``last_seen``, ``delta_min_us``/``delta_median_us``/``delta_max_us``), ``recongraph_temporal.graphml`` (one edge per
+transition: ``seq``, ``t_src``/``t_dst`` and their ``_us`` epoch microseconds, ``delta_us``, ``src_row``/``dst_row``) and
+``recongraph_meta.json`` with the run's configuration (node mode, edge order, input file, rule
 path, how each source was treated with its row count, Drain3 configuration and snapshots). The same input and configuration give the same GraphML.
 
 Example:
@@ -95,22 +96,24 @@ Full example with all output flags
    # Linux / macOS
    docker run --rm -v "$(pwd)/data:/app/data" recongraph \
      -f forensic_timeline.csv \
-     -o result_graph.graphml \
-     --export-csv \
+     -o result \
+     --export-events \
      --export-sigma
 
    # Windows (PowerShell)
    docker run --rm -v "${PWD}\data:/app/data" recongraph `
      -f forensic_timeline.csv `
-     -o result_graph.graphml `
-     --export-csv `
+     -o result `
+     --export-events `
      --export-sigma
 
-This will produce the following files inside your local ``data/`` folder:
+This will produce the following files inside ``data/result/``:
 
-- ``result_graph.graphml`` — the forensic graph
-- ``reconstruction_event_logs.csv`` — detailed event log entries
-- ``<filename>_sigma_labeled.csv`` — input log annotated with Sigma rule matches
+- ``recongraph_agg.graphml`` — the aggregate graph
+- ``recongraph_temporal.graphml`` — the graph with one edge per transition
+- ``recongraph_meta.json`` — the configuration of the run
+- ``recongraph_events.csv`` — detailed event log entries
+- ``recongraph_sigma.csv`` — input log annotated with Sigma rule matches
 
 Using custom Sigma rules
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -151,9 +154,11 @@ You can integrate ReconGraph into your own forensic analysis scripts using the u
         rules_dir='rules/'
     )
 
-   # Execute the pipeline with custom output names
+   # The library takes one path per file; each output except graph_output is written only when its path is given
    pipeline.run_all(
        graph_output='analysis_graph.graphml',
+       temporal_output='analysis_temporal.graphml',
+       metadata_output='analysis_meta.json',
        csv_output='event_details.csv',
        sigma_output='labeled_source.csv'
    )
@@ -162,7 +167,7 @@ Reconstructing Paths Between Events
 -----------------------------------
 
 ``python -m recongraph.reconstruct`` lists the paths from a source event ``s`` to a destination event ``d`` with at
-most ``k`` edges (``--max-len``, default 8) in a graph written with ``--temporal-output``:
+most ``k`` edges (``--max-len``, default 8) in a graph written by ``recongraph``:
 
 *   ``dfs``: simple paths in the aggregate graph (``networkx.all_simple_paths``); no node repeats and time is ignored.
 *   ``time``: time-respecting walks ``e1..em`` over the temporal graph: ``e1`` leaves ``s``, ``em`` arrives at ``d``,
@@ -174,7 +179,7 @@ most ``k`` edges (``--max-len``, default 8) in a graph written with ``--temporal
 
 .. code-block:: bash
 
-   python -m recongraph.reconstruct --temporal temporal.graphml --agg agg.graphml \
+   python -m recongraph.reconstruct --temporal result/recongraph_temporal.graphml --agg result/recongraph_agg.graphml \
        --src "Base64 Encoded PowerShell" --dst "Malware Callback" --mode compare --max-len 8 --max-gap 60s --out paths.json
 
 ``--src``/``--dst`` accept a node id, an exact label or a unique label substring. ``--cap`` limits the number of

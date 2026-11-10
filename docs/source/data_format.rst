@@ -63,9 +63,9 @@ Every row gets an ``event_key``, which is its node in the graph.
 
 Drain3 runs with one template miner per data type, on the raw line (``message_body``, ``body``, otherwise ``message``),
 with GUIDs, SIDs, hex values, IPs, paths and numbers masked, and in two stages: all rows train the miner, then each row is
-matched against the final templates. Configuration and snapshots are in the ``<graph>.meta.json`` sidecar.
+matched against the final templates. Configuration and snapshots are in ``recongraph_meta.json``.
 
-The sidecar also lists under ``event_sources`` how each source was treated (``evtx``, ``structured``, ``free_text``), with its
+This file also lists under ``event_sources`` how each source was treated (``evtx``, ``structured``, ``free_text``), with its
 row count, for example ``{"structured": {"syslog:ssh:login": 2}, "free_text": {"syslog:line": 2}}``. The source is the
 ``data_type``, or ``parser`` for Plaso CSV and ``text`` for raw text logs. It is empty with ``--node=sigma``.
 
@@ -74,13 +74,13 @@ Sigma Annotation
 
 Sigma runs on every raw row in both node modes. With ``--node=drain`` the result stays an annotation:
 
-*   **Rows**: ``sigma``, ``sigma_all``, ``event_key``, and the level as ``level`` in ``--export-csv`` and as ``sigma_level``
+*   **Rows**: ``sigma``, ``sigma_all``, ``event_key``, and the level as ``level`` in ``--export-events`` and as ``sigma_level``
     in ``--export-sigma``, where the input can have a ``level`` column of its own.
 *   **Nodes**: ``event_key``, ``row_count``, ``sigma_hits`` (rows with an annotation), ``sigma_rules`` (unique, sorted,
     separated by a vertical bar), ``sigma_max_level``. A node can mix annotated and other rows. ``level`` is absent.
 *   **Temporal edges**: ``src_level``, ``dst_level``, the level of the two rows.
 
-With ``--node=sigma`` nodes keep ``level`` and have none of the other attributes; ``--export-csv`` still adds ``event_key``.
+With ``--node=sigma`` nodes keep ``level`` and have none of the other attributes; ``--export-events`` still adds ``event_key``.
 
 In both node modes, nodes carry ``tactics`` and ``techniques``, and ``--export-sigma`` rows ``sigma_tactics`` and
 ``sigma_techniques``: the union of the ATT&CK tags of every matching Sigma rule, separated by a vertical bar. Tactics use
