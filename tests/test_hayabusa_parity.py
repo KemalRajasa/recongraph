@@ -125,7 +125,7 @@ def test_sigma_ids_sorted_and_labels_unchanged(tmp_path):
 
 def test_sigma_ids_is_added_after_the_existing_columns(rules):
     df = _label_sysmon(rules)
-    assert list(df.columns)[-4:] == ["logsource", "sigma", "sigma_all", "sigma_ids"]
+    assert list(df.columns)[-6:] == ["logsource", "sigma", "sigma_all", "sigma_ids", "sigma_tactics", "sigma_techniques"]
 
 
 # --- null semantics ---

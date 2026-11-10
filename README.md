@@ -317,7 +317,10 @@ The tool generates the following files:
   (always `NEXT`, the relationship type when imported into Neo4j), `weight`
   (number of transitions), `first_seen`/`last_seen` (ISO 8601 UTC, plus `_us`
   epoch microseconds) and `delta_min_us`/`delta_median_us`/`delta_max_us`; nodes
-  carry `first_seen`/`last_seen` too. Time attributes are omitted when timestamps
+  carry `first_seen`/`last_seen` too, and `tactics` and `techniques`: the ATT&CK tags of every Sigma rule that
+  matched one of the node's rows, unique and separated by ` | `, tactics by their official name in matrix order.
+  They describe what the rules can detect, not the stage of an attack.
+  Time attributes are omitted when timestamps
   are missing or invalid. With `--node=drain` nodes also carry `event_key`, `row_count`,
   `sigma_hits` (rows with a Sigma annotation), `sigma_rules` (unique, sorted, separated
   by ` | `) and `sigma_max_level`, and have no `level`; with `--node=sigma` they carry `level`.
@@ -335,12 +338,13 @@ The tool generates the following files:
   The input log file augmented with matching Sigma rule titles and severity levels:
   `sigma` holds the primary label (highest severity, ties broken alphabetically by label) and
   `sigma_all` every matching rule, sorted and separated by ` | `; `sigma_ids` the `id` of every matching rule, sorted
-  by ID and separated by ` | ` (not aligned with `sigma_all`, where rules with the same title and level are one label).
+  by ID and separated by ` | ` (not aligned with `sigma_all`, where rules with the same title and level are one label);
+  `sigma_tactics` and `sigma_techniques` the union of the ATT&CK tags of those rules (`sigma_techniques` also holds group and software IDs).
   Rules that use a field modifier
   ReconGraph does not implement are skipped with a warning when the rules are loaded.
   With `--node=drain` also `event_key` and `sigma_level`.
 - **Run Metadata** (`<graph>.meta.json`, next to each GraphML): the configuration of the run, in a sidecar
-  so that GraphML stays plain and `--node=sigma` output differs from earlier versions only by the edge `label`: `node_mode`, `edge_order`,
+  so that GraphML stays plain and `--node=sigma` output differs from earlier versions only by the edge `label` and the node `tactics` and `techniques`: `node_mode`, `edge_order`,
   `input_file`, `sigma_rules_path`, `sigma_matching`, `sigma_rules` (rules loaded, skipped per reason, and the exclude options), `keep_all_timestamps`, `recongraph_version`, `rows_total`,
   `rows_in_graph`, under `event_sources` how each source was treated and its row count (`evtx`, `structured`, `free_text`;
   the source is the `data_type`, or `parser` for Plaso CSV; empty with `--node=sigma`), and under `drain3` the version, the

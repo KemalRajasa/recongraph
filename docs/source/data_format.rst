@@ -82,6 +82,11 @@ Sigma runs on every raw row in both node modes. With ``--node=drain`` the result
 
 With ``--node=sigma`` nodes keep ``level`` and have none of the other attributes; ``--export-csv`` still adds ``event_key``.
 
+In both node modes, nodes carry ``tactics`` and ``techniques``, and ``--export-sigma`` rows ``sigma_tactics`` and
+``sigma_techniques``: the union of the ATT&CK tags of every matching Sigma rule, separated by a vertical bar. Tactics use
+their official ATT&CK name in matrix order (``attack.defense-evasion`` is Stealth); techniques are sorted and also hold
+group and software IDs. These values describe what the rules can detect, not the stage of an attack.
+
 Sigma Rules
 -----------
 

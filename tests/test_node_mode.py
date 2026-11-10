@@ -212,7 +212,7 @@ def test_plain_text_input_is_free_text(tmp_path):
 
 @pytest.mark.parametrize("fixture", ["sysmon_lsass", "plaso_sample"])
 def test_sigma_mode_identical_to_base(tmp_path, fixture):
-    """Golden: GraphML written by commit f429c3d (patch 09), before --node existed; plaso_sample regenerated in patch 10d only to add the edge `label`."""
+    """Golden: GraphML written by commit f429c3d (patch 09), before --node existed; regenerated since only to add the edge `label` and the node `tactics` and `techniques`."""
     paths = _run(tmp_path, FIXTURES / f"{fixture}.jsonl", node_mode="sigma")
     golden = FIXTURES / "node_mode"
     for name, written in ((f"{fixture}.graphml", paths["graph_output"]), (f"{fixture}.temporal.graphml", paths["temporal_output"])):

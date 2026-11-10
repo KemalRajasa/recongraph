@@ -1,17 +1,19 @@
 <?xml version='1.0' encoding='utf-8'?>
-<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d17" for="edge" attr.name="delta_us" attr.type="long"/>
-<key id="d16" for="edge" attr.name="t_dst_us" attr.type="long"/>
-<key id="d15" for="edge" attr.name="t_dst" attr.type="string"/>
-<key id="d14" for="edge" attr.name="t_src_us" attr.type="long"/>
-<key id="d13" for="edge" attr.name="t_src" attr.type="string"/>
-<key id="d12" for="edge" attr.name="dst_row" attr.type="long"/>
-<key id="d11" for="edge" attr.name="src_row" attr.type="long"/>
-<key id="d10" for="edge" attr.name="seq" attr.type="long"/>
-<key id="d9" for="edge" attr.name="label" attr.type="string"/>
-<key id="d8" for="node" attr.name="last_seen_us" attr.type="long"/>
-<key id="d7" for="node" attr.name="last_seen" attr.type="string"/>
-<key id="d6" for="node" attr.name="first_seen_us" attr.type="long"/>
-<key id="d5" for="node" attr.name="first_seen" attr.type="string"/>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d19" for="edge" attr.name="delta_us" attr.type="long"/>
+<key id="d18" for="edge" attr.name="t_dst_us" attr.type="long"/>
+<key id="d17" for="edge" attr.name="t_dst" attr.type="string"/>
+<key id="d16" for="edge" attr.name="t_src_us" attr.type="long"/>
+<key id="d15" for="edge" attr.name="t_src" attr.type="string"/>
+<key id="d14" for="edge" attr.name="dst_row" attr.type="long"/>
+<key id="d13" for="edge" attr.name="src_row" attr.type="long"/>
+<key id="d12" for="edge" attr.name="seq" attr.type="long"/>
+<key id="d11" for="edge" attr.name="label" attr.type="string"/>
+<key id="d10" for="node" attr.name="last_seen_us" attr.type="long"/>
+<key id="d9" for="node" attr.name="last_seen" attr.type="string"/>
+<key id="d8" for="node" attr.name="first_seen_us" attr.type="long"/>
+<key id="d7" for="node" attr.name="first_seen" attr.type="string"/>
+<key id="d6" for="node" attr.name="techniques" attr.type="string"/>
+<key id="d5" for="node" attr.name="tactics" attr.type="string"/>
 <key id="d4" for="node" attr.name="level" attr.type="string"/>
 <key id="d3" for="node" attr.name="log_count" attr.type="long"/>
 <key id="d2" for="node" attr.name="timestamp" attr.type="string"/>
@@ -23,10 +25,12 @@
   <data key="d2">2023-11-14T22:13:22.000000+00:00</data>
   <data key="d3">1</data>
   <data key="d4">high</data>
-  <data key="d5">2023-11-14T22:13:22.000000+00:00</data>
-  <data key="d6">1700000002000000</data>
+  <data key="d5"></data>
+  <data key="d6"></data>
   <data key="d7">2023-11-14T22:13:22.000000+00:00</data>
   <data key="d8">1700000002000000</data>
+  <data key="d9">2023-11-14T22:13:22.000000+00:00</data>
+  <data key="d10">1700000002000000</data>
 </node>
 <node id="1">
   <data key="d0">1. Synthetic Classic PowerShell Data[low]</data>
@@ -34,20 +38,22 @@
   <data key="d2">2023-11-14T22:13:23.000000+00:00</data>
   <data key="d3">1</data>
   <data key="d4">low</data>
-  <data key="d5">2023-11-14T22:13:23.000000+00:00</data>
-  <data key="d6">1700000003000000</data>
+  <data key="d5"></data>
+  <data key="d6"></data>
   <data key="d7">2023-11-14T22:13:23.000000+00:00</data>
   <data key="d8">1700000003000000</data>
+  <data key="d9">2023-11-14T22:13:23.000000+00:00</data>
+  <data key="d10">1700000003000000</data>
 </node>
 <edge source="0" target="1" id="0">
-  <data key="d9">NEXT</data>
-  <data key="d10">0</data>
-  <data key="d11">1</data>
-  <data key="d12">2</data>
-  <data key="d13">2023-11-14T22:13:22.000000+00:00</data>
-  <data key="d14">1700000002000000</data>
-  <data key="d15">2023-11-14T22:13:23.000000+00:00</data>
-  <data key="d16">1700000003000000</data>
-  <data key="d17">1000000</data>
+  <data key="d11">NEXT</data>
+  <data key="d12">0</data>
+  <data key="d13">1</data>
+  <data key="d14">2</data>
+  <data key="d15">2023-11-14T22:13:22.000000+00:00</data>
+  <data key="d16">1700000002000000</data>
+  <data key="d17">2023-11-14T22:13:23.000000+00:00</data>
+  <data key="d18">1700000003000000</data>
+  <data key="d19">1000000</data>
 </edge>
 </graph></graphml>

@@ -29,6 +29,26 @@ logger = logging.getLogger(__name__)
 
 NODE_MODES = ("drain", "sigma")
 EDGE_LABEL = "NEXT"  # relationship type of every edge when a GraphML file is imported into Neo4j
+# Sigma tag -> ATT&CK Enterprise tactic, in matrix order; TA0005 was named Defense Evasion before it became Stealth
+MITRE_TACTICS = {
+    "attack.reconnaissance": "Reconnaissance",
+    "attack.resource-development": "Resource Development",
+    "attack.initial-access": "Initial Access",
+    "attack.execution": "Execution",
+    "attack.persistence": "Persistence",
+    "attack.privilege-escalation": "Privilege Escalation",
+    "attack.stealth": "Stealth",
+    "attack.defense-evasion": "Stealth",
+    "attack.defense-impairment": "Defense Impairment",
+    "attack.credential-access": "Credential Access",
+    "attack.discovery": "Discovery",
+    "attack.lateral-movement": "Lateral Movement",
+    "attack.collection": "Collection",
+    "attack.command-and-control": "Command and Control",
+    "attack.exfiltration": "Exfiltration",
+    "attack.impact": "Impact",
+}
+_TACTIC_ORDER = list(dict.fromkeys(MITRE_TACTICS.values()))
 SIGMA_LEVELS = {"critical": 5, "high": 4, "medium": 3, "low": 2, "informational": 1}
 _WINDASH = ("-", "/", "\u2013", "\u2014", "\u2015")  # Sigma windash: -, /, en dash, em dash, horizontal bar
 
@@ -59,8 +79,31 @@ SUPPORTED_MODIFIERS = frozenset({"contains", "startswith", "endswith", "all", "r
 _RULE_ID = re.compile(r"[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}")
 
 
+def mitre_annotations(tags) -> tuple:
+    """Return (tactics, techniques) of a rule's tags; techniques also holds the ATT&CK group and software tags."""
+    tactics, techniques = [], []
+    for tag in map(str, tags or []):
+        if tag in MITRE_TACTICS:
+            tactics.append(MITRE_TACTICS[tag])
+        elif tag.startswith(("attack.t", "attack.g", "attack.s")):
+            name = tag.removeprefix("attack.")
+            techniques.append(name[:1].upper() + name[1:])
+    return tactics, techniques
+
+
+def join_tactics(tactics) -> str:
+    return " | ".join(sorted(set(tactics), key=_TACTIC_ORDER.index))
+
+
+def join_techniques(techniques) -> str:
+    return " | ".join(sorted(set(techniques)))
+
+
+def _split_annotations(values) -> List[str]:
+    return [item for value in values if isinstance(value, str) for item in value.split(" | ") if item]
+
+
 def read_rule_id_list(path) -> set:
-    """Rule IDs of a list in the format of Hayabusa's exclude_rules.txt: one per line, ``#`` starts a comment, other lines are ignored."""
     with open(path, 'r', encoding='utf-8') as f:
         return {rule_id for rule_id in (line.split('#', 1)[0].strip() for line in f) if _RULE_ID.fullmatch(rule_id)}
 
@@ -90,6 +133,7 @@ class SigmaMatcher:
         self.description = self.rule_data.get('description', '')
         self.level = self.rule_data.get('level', 'medium')
         self.tags = self.rule_data.get('tags', [])
+        self.tactics, self.techniques = mitre_annotations(self.tags)
         self.detection = self.rule_data.get('detection', {})
         self.logsource = self.rule_data.get('logsource', {})
         self.flexible_mode = flexible_mode
@@ -211,7 +255,6 @@ class SigmaMatcher:
 
     @staticmethod
     def _is_null(pattern) -> bool:
-        """Sigma `null` (YAML null, or the literal 'null'): the field is missing. As in Hayabusa, a present but empty field is not null."""
         return pattern is None or str(pattern).lower() == "null"
 
     def _match_selection(self, selection, log_entry: Dict) -> bool:
@@ -491,7 +534,6 @@ class SigmaRulesLoader:
             try:
                 with open(rule_file, 'r', encoding='utf-8') as f:
                     rule_data = yaml.safe_load(f)
-                # same order as Hayabusa: an excluded rule counts as excluded whatever its status
                 if str(rule_data.get('id', '')) in exclude_ids:
                     self.skip_counts["exclude_list"] += 1
                     continue
@@ -544,6 +586,8 @@ class SigmaRulesLoader:
                     'rule_title': matcher.title,
                     'rule_level': matcher.level,
                     'rule_id': matcher.rule_id,
+                    'tactics': matcher.tactics,
+                    'techniques': matcher.techniques,
                 })
         return matches
 
@@ -769,6 +813,8 @@ class SigmaLabel(object):
             new_row['sigma_all'] = detection_str
             # sorted by rule ID; not aligned with sigma_all, where rules sharing a title and level are one label
             new_row['sigma_ids'] = " | ".join(sorted({m['rule_id'] for m in matches if m['rule_id']}))
+            new_row['sigma_tactics'] = join_tactics(t for m in matches for t in m['tactics'])
+            new_row['sigma_techniques'] = join_techniques(t for m in matches for t in m['techniques'])
             processed_rows.append(new_row)
 
         return pd.DataFrame(processed_rows)
@@ -984,10 +1030,19 @@ class EdgeGraph(object):
                     self.G.nodes[event_id]['level'] = self.extract_level(
                         self.node_labels.get(event_id, "")
                     )
+                self.G.nodes[event_id].update(self._mitre_node_attributes(event_id))
                 known = [t for t in self.event_times_us[event_id] if t is not None]
                 if known:
                     self.G.nodes[event_id].update(self._time_attrs('first_seen', min(known)))
                     self.G.nodes[event_id].update(self._time_attrs('last_seen', max(known)))
+
+    def _mitre_node_attributes(self, event_id) -> dict:
+        """ATT&CK annotation of a node: the union over every Sigma rule that matched one of its rows."""
+        rows = self.df.iloc[self.event_rows[event_id]]
+        return {
+            'tactics': join_tactics(_split_annotations(rows.get('sigma_tactics', ()))),
+            'techniques': join_techniques(_split_annotations(rows.get('sigma_techniques', ()))),
+        }
 
     def _drain_node_attributes(self, event_id) -> dict:
         """The node's identity and the Sigma annotation of its rows; a node can mix annotated and other rows."""
@@ -1287,7 +1342,7 @@ def main():
     parser.add_argument('--exclude-status', type=lambda v: [s.strip() for s in v.split(',') if s.strip()], default=[], metavar='STATUS[,STATUS...]',
                         help='Do not load rules with these statuses (ex: deprecated,unsupported)')
     parser.add_argument('--exclude-rules-file', default=None, metavar='FILE',
-                        help='Do not load rules whose id is listed in FILE (format of Hayabusa exclude_rules.txt: one UUID per line, # starts a comment)')
+                        help='Do not load rules whose id is listed in FILE')
     parser.add_argument('--keep-all-timestamps', action='store_true', help='JSON Lines input: keep every timestamp row of an EVTX record instead of only "Creation Time"')
     parser.add_argument('--edge-order', choices=['time', 'file'], default='time', help='Order transitions by timestamp (default) or by input row order')
     parser.add_argument('--temporal-output', default=None, help='Also write a GraphML with one edge per transition (timestamps, delta, source rows)')

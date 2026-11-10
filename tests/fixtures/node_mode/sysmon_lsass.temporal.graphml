@@ -1,8 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
-<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d8" for="node" attr.name="last_seen_us" attr.type="long"/>
-<key id="d7" for="node" attr.name="last_seen" attr.type="string"/>
-<key id="d6" for="node" attr.name="first_seen_us" attr.type="long"/>
-<key id="d5" for="node" attr.name="first_seen" attr.type="string"/>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d10" for="node" attr.name="last_seen_us" attr.type="long"/>
+<key id="d9" for="node" attr.name="last_seen" attr.type="string"/>
+<key id="d8" for="node" attr.name="first_seen_us" attr.type="long"/>
+<key id="d7" for="node" attr.name="first_seen" attr.type="string"/>
+<key id="d6" for="node" attr.name="techniques" attr.type="string"/>
+<key id="d5" for="node" attr.name="tactics" attr.type="string"/>
 <key id="d4" for="node" attr.name="level" attr.type="string"/>
 <key id="d3" for="node" attr.name="log_count" attr.type="long"/>
 <key id="d2" for="node" attr.name="timestamp" attr.type="string"/>
@@ -14,9 +16,11 @@
   <data key="d2">2023-11-14T22:13:22.000000+00:00</data>
   <data key="d3">1</data>
   <data key="d4">high</data>
-  <data key="d5">2023-11-14T22:13:22.000000+00:00</data>
-  <data key="d6">1700000002000000</data>
+  <data key="d5"></data>
+  <data key="d6"></data>
   <data key="d7">2023-11-14T22:13:22.000000+00:00</data>
   <data key="d8">1700000002000000</data>
+  <data key="d9">2023-11-14T22:13:22.000000+00:00</data>
+  <data key="d10">1700000002000000</data>
 </node>
 </graph></graphml>

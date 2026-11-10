@@ -22,7 +22,8 @@ Arguments:
 *   ``--export-sigma``: Export the full sigma-labeled DataFrame to a CSV file.
 *   ``--strict``: Strict logsource validation (category, product and service must match). Flexible mode (default) only
     checks ``product`` and lets only keyword selections fall back to the whole message.
-    ``--export-sigma`` writes ``sigma`` (primary label), ``sigma_all`` (every matching rule) and ``sigma_ids`` (their rule IDs, sorted).
+    ``--export-sigma`` writes ``sigma`` (primary label), ``sigma_all`` (every matching rule), ``sigma_ids`` (their rule IDs, sorted),
+    ``sigma_tactics`` and ``sigma_techniques`` (the union of their ATT&CK tags).
 *   ``--keep-all-timestamps``: JSON Lines input only. Keep every timestamp row of an EVTX record instead of only ``Creation Time``.
 *   ``--edge-order {time,file}``: Order transitions by timestamp (default; ties keep row order, rows without a valid
     timestamp stay right after the row they follow) or by input row order (the original behavior).
