@@ -299,6 +299,12 @@ drops timestamps before 1970 and sorts by time. The input file is never modified
 - Control characters that are illegal in XML 1.0 are removed before parsing; events
   whose XML is still unparsable keep only the generic columns.
 
+A Linux audit log (`audit.log`, Plaso `selinux:line`) gets the logsource `linux`,
+`auditd`. Each audit event is one row; Sigma rules for auditd are matched against
+each of its records, by auditd field names (`type`, `SYSCALL`, `a0`, `name`, `exe`,
+`key`, the fields inside `msg='...'`, ...), and the event gets the rules of all its
+records. Hex-encoded text (EXECVE arguments, `proctitle`, `cmd`, ...) is decoded.
+
 ```bash
 psort.py -o json_line -w timeline.jsonl timeline.plaso
 recongraph -f timeline.jsonl -r ./sigma/rules/windows --strict

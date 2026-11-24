@@ -35,6 +35,15 @@ AUDIT_DATA_TYPE = "selinux:line"
 AUDIT_RECORD_ORDER = ("SYSCALL", "BPRM_FCAPS", "EXECVE", "SOCKADDR", "CWD", "PATH")
 # PATH records follow their item number, EXECVE records (long argument lists are split) their first argument.
 _AUDIT_RECORD_NUMBER = re.compile(r"\b(?:item=|a)(\d+)\b")
+# auditd fields holding text: quoted, or hex-encoded when unquoted (text with a space, quote or control character), and
+# (null) when empty; so are the arguments aN of EXECVE records. The aN of SYSCALL records are numbers and stay as written.
+# Checked on the CAM-LDS videoserver audit.log: these are the fields it ever quotes, and their unquoted values are hex.
+AUDIT_TEXT_FIELDS = {"proctitle", "cmd", "comm", "exe", "cwd", "name", "key", "acct"}
+# name=value with a "double", 'single' quoted or bare value, or a bare word that continues the previous value
+_AUDIT_FIELD = re.compile(r"""([^\s=]+)=("[^"]*"|'[^']*'|\S*)|(\S+)""")
+# an EXECVE argument, or a piece of one (a1[0], a1[1], ... after a1_len) when it is too long for one record
+_EXECVE_ARGUMENT = re.compile(r"(a\d+)(\[\d+\])?")
+_HEX_TEXT = re.compile(r"(?:[0-9A-Fa-f]{2})+")
 
 # EVTX Channel -> Sigma `service:` (names as used in sigma/rules/windows/builtin).
 CHANNEL_SERVICES = {
@@ -219,7 +228,8 @@ def _generic_log_type(row: dict) -> list:
     name = re.split(r"[\\/]", row.get("source_path") or "")[-1].lower()
     services = [service for pattern, service in LINUX_FILE_SERVICES if pattern.fullmatch(name)]
     reporter = LINUX_REPORTER_SERVICES.get(str(row.get("reporter") or "").lower())
-    return ["linux", *services, *([reporter] if reporter else [])]
+    auditd = ["auditd"] if row.get("data_type") == AUDIT_DATA_TYPE else []
+    return ["linux", *services, *([reporter] if reporter else []), *auditd]
 
 
 def _iso(timestamp) -> str | None:
@@ -270,11 +280,66 @@ def _audit_record_rank(row: dict) -> tuple:
     return position, int(number.group(1)) if number else 0, row.get("message") or ""
 
 
+def _audit_text(value: str) -> str | None:
+    """A text field as auditd means it: quotes removed, hex decoded (NUL separators become spaces), None for (null)."""
+    if value.startswith('"'):
+        return value[1:-1]
+    if value == "(null)":
+        return None
+    if _HEX_TEXT.fullmatch(value):
+        return bytes.fromhex(value).decode("utf-8", errors="replace").replace("\x00", " ")
+    return value
+
+
+def _audit_fields(audit_type: str, body: str) -> dict:
+    """The fields of one audit record, by their auditd names, from its text after ``msg=audit(...):``.
+
+    The fields inside ``msg='...'`` (user space records such as USER_CMD) are fields of the record; on a name clash the
+    outer field wins. Text fields are decoded (``_audit_text``), other quoted values lose their quotes.
+    """
+    fields, last = {}, None
+    for match in _AUDIT_FIELD.finditer(body):
+        name, value, word = match.groups()
+        if word:  # a value with a space, e.g. subj==/usr/sbin/chronyd (enforce)
+            if last:
+                fields[last] += " " + word
+            continue
+        last = None
+        if name == "msg" and value.startswith("'"):
+            for key, inner in _audit_fields(audit_type, value[1:-1]).items():
+                fields.setdefault(key, inner)
+            continue
+        argument = _EXECVE_ARGUMENT.fullmatch(name) if audit_type == "EXECVE" else None
+        if argument or name in AUDIT_TEXT_FIELDS:
+            value = _audit_text(value)
+            if value is None:
+                continue
+        elif value[:1] in "\"'":
+            value = value[1:-1]
+        if argument and argument.group(2):
+            fields[argument.group(1)] = fields.get(argument.group(1), "") + value
+        elif name not in fields:
+            fields[name] = value
+            last = name
+    return fields
+
+
+def _audit_record(row: dict) -> dict:
+    """What Sigma rules for auditd see of one record: ``type``, its fields, ``SYSCALL`` (the syscall name, which Plaso
+    reads from the part of the line it leaves out of ``message_body``) and the record's ``message``."""
+    record = {"type": row.get("audit_type"), **_audit_fields(row.get("audit_type"), row.get("message_body") or "")}
+    if row.get("system_call"):
+        record["SYSCALL"] = row["system_call"]
+    record["message"] = row.get("message")
+    return {key: value for key, value in record.items() if value is not None}
+
+
 def _audit_event(records: list) -> dict:
     """One row for the records of one audit event, in the order auditd wrote them.
 
     Columns come from the records in that order, the first value winning, so the record that triggered the event (or
     SYSCALL) sets ``audit_type``; ``message`` and ``message_body`` are the records' values joined with newlines.
+    ``audit_records`` is a JSON list of ``_audit_record`` per record, in the same order.
     """
     records = sorted(records, key=_audit_record_rank)
     event = {}
@@ -283,6 +348,7 @@ def _audit_event(records: list) -> dict:
             event.setdefault(key, value)
     for column in ("message", "message_body"):
         event[column] = "\n".join(record[column] for record in records if record.get(column))
+    event["audit_records"] = json.dumps([_audit_record(record) for record in records], ensure_ascii=False)
     return event
 
 
@@ -300,7 +366,8 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
     ==========================================  =========================================================
     syslog, linux, systemd, selinux             linux, + auth if the source file is auth.log* or secure*,
                                                 + syslog if it is syslog* or messages*,
-                                                + sshd / cron / vsftpd from the syslog ``reporter``
+                                                + sshd / cron / vsftpd from the syslog ``reporter``,
+                                                + auditd for the Linux audit log (``selinux:line``)
     android                                     android
     ios                                         ios
     anything else (fs:stat, windows:*, ...)     [] (rows kept, count logged; strict mode then matches
@@ -308,8 +375,8 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
     ==========================================  =========================================================
 
     Linux audit log (``selinux:line``): the records of one audit event (same source file, timestamp and
-    ``audit_serial``) become one row, see ``_audit_event``. Rows with one timestamp follow the EVTX record number or
-    the audit serial number.
+    ``audit_serial``) become one row, see ``_audit_event``, with the fields of each record in ``audit_records`` for
+    Sigma rules (``_audit_record``). Rows with one timestamp follow the EVTX record number or the audit serial number.
     """
     rows = []
     audit_events = defaultdict(list)
@@ -331,6 +398,8 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
             row = _record(obj, f"{path}:{lineno}", stats)
             if row["data_type"] == AUDIT_DATA_TYPE and row.get("audit_serial"):
                 audit_events[row.get("source_path") or row["display_name"], row["_ts"], row["audit_serial"]].append(row)
+            elif row["data_type"] == AUDIT_DATA_TYPE:
+                rows.append(_audit_event([row]))
             else:
                 rows.append(row)
     rows += [_audit_event(records) for records in audit_events.values()]

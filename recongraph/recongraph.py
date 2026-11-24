@@ -796,12 +796,20 @@ class SigmaLabel(object):
 
             if input_format == "plaso_jsonl" and isinstance(row.get('log_type'), list):
                 features = {"log_type": row['log_type']}
-                log_entry = {k: row[k] for k in event_fields if isinstance(row[k], str)}
-                log_entry.update(desc=desc, log_type=row['log_type'])
+                if isinstance(row.get('audit_records'), str):
+                    # an audit event: Sigma rules for auditd describe one record (type EXECVE with a0, type PATH with
+                    # name), so each record is matched on its own and the event gets the rules of all its records
+                    log_entries = [{**{k: v for k, v in record.items() if k != "message"},
+                                    "desc": record.get("message", ""), "log_type": row['log_type']}
+                                   for record in json.loads(row['audit_records'])]
+                else:
+                    log_entry = {k: row[k] for k in event_fields if isinstance(row[k], str)}
+                    log_entry.update(desc=desc, log_type=row['log_type'])
+                    log_entries = [log_entry]
             else:
                 features = self.detect_log_type(str(desc), str(fname))
 
-                log_entry = {
+                log_entries = [{
                     "desc": desc,
                     "log_type": features["log_type"],
                     "cs-method": features.get("cs-method", ""),
@@ -809,9 +817,9 @@ class SigmaLabel(object):
                     "sc-status": features.get("sc-status", ""),
                     "cs-user-agent": features.get("cs-user-agent", ""),
                     "service": features.get("service", ""),
-                }
+                }]
 
-            matches = rules_loader.check_row(log_entry)
+            matches = [m for entry in log_entries for m in rules_loader.check_row(entry)]
             detection_str = " | ".join(sorted({f"{m['rule_title']}[{m['rule_level']}]" for m in matches}))
 
             new_row = row.to_dict()

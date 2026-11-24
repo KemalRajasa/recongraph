@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from recongraph.input_adapters import GENERIC_COLUMNS, _unpad_hex, load_plaso_jsonl
+from recongraph.input_adapters import GENERIC_COLUMNS, _audit_fields, _unpad_hex, load_plaso_jsonl
 from recongraph.recongraph import SigmaLabel
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -157,7 +157,7 @@ def test_audit_event_takes_columns_from_its_records():
     assert {k: row[k] for k in ("audit_type", "system_call", "executable", "process_arguments", "file_path", "process_title")} == {
         "audit_type": "SYSCALL", "system_call": "execve", "executable": "/usr/bin/sudo",
         "process_arguments": "sudo dmesg -H", "file_path": "/usr/bin/sudo", "process_title": "sudo dmesg -H"}
-    assert row["log_type"] == ["linux"]
+    assert row["log_type"] == ["linux", "auditd"]
 
 
 @pytest.mark.parametrize("serial, types", [
@@ -200,6 +200,100 @@ def test_audit_records_of_different_files_are_not_merged(tmp_path):
     other["pathspec"] = {**other["pathspec"], "location": "/var/log/audit/audit.log.1"}
     (tmp_path / "a.jsonl").write_text(line + "\n" + json.dumps(other) + "\n", encoding="utf-8")
     assert len(load_plaso_jsonl(tmp_path / "a.jsonl")) == 2
+
+
+# --- Linux audit.log: auditd fields per record for Sigma ---
+
+def _audit_records(serial):
+    [row] = _audit_rows(serial)
+    return [{k: v for k, v in record.items() if k != "message"} for record in json.loads(row["audit_records"])]
+
+
+def test_audit_records_hold_each_record_by_auditd_field_names():
+    records = _audit_records("13125")
+    assert [r["type"] for r in records] == ["SYSCALL", "EXECVE", "PATH", "PATH", "PATH", "PROCTITLE"]
+    syscall = records[0]
+    assert {k: syscall[k] for k in ("SYSCALL", "syscall", "a0", "euid", "comm", "exe", "key")} == {
+        "SYSCALL": "execve", "syscall": "59", "a0": "55849438a4b0", "euid": "0", "comm": "sudo", "exe": "/usr/bin/sudo",
+        "key": "T1078_Valid_Accounts"}
+    assert records[1] == {"type": "EXECVE", "argc": "3", "a0": "sudo", "a1": "dmesg", "a2": "-H"}
+    assert (records[2]["name"], records[2]["nametype"]) == ("/usr/bin/sudo", "NORMAL")
+    assert records[5] == {"type": "PROCTITLE", "proctitle": "sudo dmesg -H"}
+
+
+def test_audit_record_keeps_its_message():
+    [row] = _audit_rows("13129")
+    [record] = json.loads(row["audit_records"])
+    assert record["message"] == row["message"]
+
+
+def test_audit_hex_text_is_decoded_and_syscall_arguments_are_not():
+    records = _audit_records("285")
+    assert records[1]["a2"] == "/bin/run-parts --exit-on-error /etc/network/if-pre-up.d"
+    assert records[0]["a0"] == "559a48281017"
+
+
+def test_audit_split_execve_records_keep_their_arguments():
+    first, second = [r for r in _audit_records("4775") if r["type"] == "EXECVE"]
+    assert (first["argc"], first["a0"], second["a537"]) == ("724", "find", "snmpd.conf")
+
+
+def test_audit_fields_inside_msg_are_record_fields():
+    [user_cmd] = _audit_records("13129")
+    assert {k: user_cmd[k] for k in ("uid", "cwd", "cmd", "exe", "terminal", "res")} == {
+        "uid": "33", "cwd": "/tmp", "cmd": "dmesg -H", "exe": "/usr/bin/sudo", "terminal": "pts/0", "res": "success"}
+    assert "msg" not in user_cmd
+    [service] = _audit_records("4254")
+    assert (service["unit"], service["comm"]) == ("systemd-tmpfiles-clean", "systemd")
+
+
+@pytest.mark.parametrize("audit_type, body, expected", [
+    ("SYSCALL", 'comm="chronyd" subj==/usr/sbin/chronyd (enforce) key="T1078_Valid_Accounts"',
+     {"comm": "chronyd", "subj": "=/usr/sbin/chronyd (enforce)", "key": "T1078_Valid_Accounts"}),
+    ("SYSCALL", "a0=3 comm=7A6D6320616263 key=(null)", {"a0": "3", "comm": "zmc abc"}),
+    ("EXECVE", "argc=3 a0=\"echo\" a1=20 a2=\"\"", {"argc": "3", "a0": "echo", "a1": " ", "a2": ""}),
+    ("EXECVE", "argc=2 a0=\"cat\" a1_len=6 a1[0]=616263 a1[1]=\"def\"", {"argc": "2", "a0": "cat", "a1_len": "6", "a1": "abcdef"}),
+    ("USER_END", "pid=1 msg='op=PAM:session_close pid=2 acct=\"root\" res=success'",
+     {"pid": "1", "op": "PAM:session_close", "acct": "root", "res": "success"}),
+    ("PROCTITLE", "proctitle=7375646F00646D657367", {"proctitle": "sudo dmesg"}),
+])
+def test_audit_fields(audit_type, body, expected):
+    assert _audit_fields(audit_type, body) == expected
+
+
+def _auditd_rule(tmp_path, title, selection, logsource=None):
+    rule = {"title": title, "level": "low", "logsource": logsource or {"product": "linux", "service": "auditd"},
+            "detection": {"selection": selection, "condition": "selection"}}
+    (tmp_path / f"{title}.yml").write_text(yaml.safe_dump(rule), encoding="utf-8")
+
+
+def _audit_sigma(tmp_path, flexible_mode=False):
+    df = SigmaLabel(str(AUDIT), str(tmp_path), flexible_mode=flexible_mode).run()
+    return {serial: sigma_all for serial, sigma_all in zip(df["audit_serial"], df["sigma_all"]) if sigma_all}
+
+
+def test_strict_auditd_rule_matches_one_record_of_an_event(tmp_path):
+    _auditd_rule(tmp_path, "Sudo", {"type": "EXECVE", "a0": "sudo", "a1": "dmesg"})
+    assert _audit_sigma(tmp_path) == {"13125": "Sudo[low]"}
+
+
+def test_auditd_rule_does_not_combine_fields_of_two_records(tmp_path):
+    _auditd_rule(tmp_path, "Mixed", {"type": "SYSCALL", "a0": "sudo"})
+    _auditd_rule(tmp_path, "Unit", {"type": "SERVICE_START", "unit": "systemd-tmpfiles-clean"})
+    assert _audit_sigma(tmp_path) == {"4254": "Unit[low]"}
+
+
+def test_auditd_event_gets_the_rules_of_all_its_records(tmp_path):
+    _auditd_rule(tmp_path, "Execve", {"type": "SYSCALL", "SYSCALL": "execve", "euid": "33"})
+    _auditd_rule(tmp_path, "Find", {"type": "PATH", "name": "/usr/bin/find"})
+    assert _audit_sigma(tmp_path) == {"4775": "Execve[low] | Find[low]"}
+
+
+def test_auditd_keyword_rule_searches_each_record_message(tmp_path):
+    rule = {"title": "Keyword", "level": "low", "logsource": {"product": "linux", "service": "auditd"},
+            "detection": {"keywords": ["T1168_Local_Job_Scheduling"], "condition": "keywords"}}
+    (tmp_path / "k.yml").write_text(yaml.safe_dump(rule), encoding="utf-8")
+    assert _audit_sigma(tmp_path) == {"34": "Keyword[low]"}
 
 
 # --- hex normalization (winevtx) ---

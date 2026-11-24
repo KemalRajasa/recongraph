@@ -27,6 +27,16 @@ record is kept (``--keep-all-timestamps`` keeps all), timestamps before 1970 are
 always follows the ``System`` channel. ``Data`` elements without a ``Name`` become ``param1``, ``param2``, ... and are
 also joined with newlines into ``Data``. XML-illegal control characters are removed before parsing.
 
+A **Linux audit log** in Plaso JSON Lines (``selinux:line``) gets the logsource tokens ``linux`` and ``auditd``. Each
+audit event is one row (see *Event Identity* below), and its ``audit_records`` column holds, as a JSON list, every
+record by auditd field names: ``type``, the fields of the record text (those inside ``msg='...'`` included, the outer
+field winning on a name clash), ``SYSCALL`` (the syscall name, taken from Plaso's ``system_call``) and the record's
+``message``. Text fields (EXECVE arguments ``aN``, ``proctitle``, ``cmd``, ``comm``, ``exe``, ``cwd``, ``name``,
+``key``, ``acct``) lose their quotes or are hex-decoded, and ``(null)`` leaves the field out; the ``aN`` of SYSCALL
+records are numbers and stay as written. Sigma rules are matched against each record on its own, with the record's
+``message`` as the text for keyword selections, and the event gets the rules of all its records; a rule therefore
+never combines fields of two records (``a0`` of SYSCALL and ``a0`` of EXECVE).
+
 If not using a Plaso CSV, ReconGraph can also process **raw text logs**. In this case, the tool will treat each line as a description and use the current filename as the source.
 
 Event Identity (``--node=drain``)

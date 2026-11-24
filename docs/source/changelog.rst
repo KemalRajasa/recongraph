@@ -17,6 +17,8 @@ Unreleased
 - **Changed input:** a Linux audit log in Plaso JSONL (``selinux:line``) becomes one row per audit event instead of one per
   record, with the records in the order auditd wrote them; its ``--node=drain`` key is ``auditd:<audit_type>[:<system_call>]``
   instead of one ``selinux:line:Content Modification Time`` node.
+- **Changed Sigma matching:** Linux audit events get the logsource token ``auditd``, so ``service: auditd`` rules apply,
+  and are matched record by record on auditd field names (``audit_records`` column), hex-encoded text decoded.
 
 v0.0.3
 ------
