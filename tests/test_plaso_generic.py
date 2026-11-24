@@ -358,6 +358,81 @@ def test_auditd_keyword_rule_searches_each_record_message(tmp_path):
     assert _audit_sigma(tmp_path) == {"34": "Keyword[low]"}
 
 
+# --- Apache access log: Sigma webserver fields ---
+
+APACHE = PLASO / "linux_apache.jsonl"
+
+
+def _apache_row(request):
+    return next(r for r in _rows("linux_apache.jsonl") if r["http_request"] == request)
+
+
+def test_apache_row_has_webserver_fields():
+    row = _apache_row("GET /3djchuWN.cwr HTTP/1.1")
+    assert row["log_type"] == ["webserver"]
+    assert {k: row[k] for k in ("cs-method", "c-uri", "cs-uri-stem", "cs-uri-query", "cs-version", "sc-status",
+                                "cs-user-agent", "c-ip", "sc-bytes")} == {
+        "cs-method": "GET", "c-uri": "/3djchuWN.cwr", "cs-uri-stem": "/3djchuWN.cwr", "cs-uri-query": "/3djchuWN.cwr",
+        "cs-version": "HTTP/1.1", "sc-status": "404", "cs-user-agent": "Mozilla/5.00 (Nikto/2.1.5) (Evasions:None) (Test:map_codes)",
+        "c-ip": "192.42.1.174", "sc-bytes": "396"}
+
+
+def test_apache_uri_query_is_the_whole_target_and_stem_its_path():
+    row = _apache_row("GET /cgi-bin/story.pl?next=../../../../../../../../../../etc/passwd%00 HTTP/1.1")
+    assert row["cs-uri-stem"] == "/cgi-bin/story.pl"
+    assert row["cs-uri-query"] == row["c-uri"] == "/cgi-bin/story.pl?next=../../../../../../../../../../etc/passwd%00"
+
+
+@pytest.mark.parametrize("request_line, method, target", [("OPTIONS * HTTP/1.1", "OPTIONS", "*"),
+                                                          ("PROPFIND / HTTP/1.1", "PROPFIND", "/"),
+                                                          ("TRACE / HTTP/1.0", "TRACE", "/")])
+def test_apache_other_methods(request_line, method, target):
+    row = _apache_row(request_line)
+    assert (row["cs-method"], row["cs-uri-query"]) == (method, target)
+
+
+def test_apache_request_that_is_not_method_target_version_gives_no_request_fields(tmp_path):
+    record = json.loads(APACHE.read_text(encoding="utf-8").splitlines()[0])
+    record["http_request"] = "\\x16\\x03\\x01"
+    (tmp_path / "a.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    row = load_plaso_jsonl(tmp_path / "a.jsonl").iloc[0]
+    assert row["sc-status"] == "404" and "cs-method" not in row and "cs-uri-query" not in row
+
+
+def test_apache_rows_are_not_logged_as_unmapped(caplog):
+    with caplog.at_level("INFO"):
+        load_plaso_jsonl(APACHE)
+    assert "without Sigma logsource tokens" not in caplog.text
+
+
+def _web_rule(tmp_path, title, detection, logsource=None):
+    rule = {"title": title, "level": "low", "logsource": logsource or {"category": "webserver"}, "detection": detection}
+    (tmp_path / f"{title}.yml").write_text(yaml.safe_dump(rule), encoding="utf-8")
+
+
+def _apache_sigma(tmp_path):
+    df = SigmaLabel(str(APACHE), str(tmp_path), flexible_mode=False).run()
+    return {r: s for r, s in zip(df["http_request"], df["sigma_all"]) if s}
+
+
+def test_strict_webserver_rule_matches_path_in_uri_query(tmp_path):
+    _web_rule(tmp_path, "Traversal", {"selection": {"cs-uri-query|contains": "../../../etc/"}, "condition": "selection"})
+    _web_rule(tmp_path, "Trace", {"selection": {"cs-method": "TRACE", "sc-status": 302}, "condition": "selection"})
+    assert _apache_sigma(tmp_path) == {
+        "GET /cgi-bin/story.pl?next=../../../../../../../../../../etc/passwd%00 HTTP/1.1": "Traversal[low]",
+        "TRACE / HTTP/1.0": "Trace[low]"}
+
+
+def test_webserver_keyword_rule_searches_the_message(tmp_path):
+    _web_rule(tmp_path, "Boot", {"keywords": ["boot.ini"], "condition": "keywords"})
+    assert _apache_sigma(tmp_path) == {"GET ////./../.../boot.ini HTTP/1.1": "Boot[low]"}
+
+
+def test_apache_error_log_rules_do_not_apply_to_the_access_log(tmp_path):
+    _web_rule(tmp_path, "ErrorLog", {"keywords": ["boot.ini"], "condition": "keywords"}, logsource={"service": "apache"})
+    assert _apache_sigma(tmp_path) == {}
+
+
 # --- hex normalization (winevtx) ---
 
 @pytest.mark.parametrize("value, expected", [

@@ -45,6 +45,16 @@ EXECVE record of a split argument list, joined with spaces as ``proctitle`` is) 
 event's ``message``, never against single records, and ``auditd`` rules only against records. ``ParentImage``,
 ``ParentCommandLine`` and ``User`` stay empty: the audit event holds only ``ppid`` and numeric user IDs.
 
+An **Apache access log** in Plaso JSON Lines (``apache:access_log:entry``) gets the logsource token ``webserver`` and
+the Sigma webserver fields (W3C names, Sigma taxonomy appendix): ``cs-method``, ``c-uri``, ``cs-uri-stem``,
+``cs-uri-query`` and ``cs-version`` from ``http_request``, ``sc-status`` from ``http_response_code``, ``cs-user-agent``
+from ``http_request_user_agent``, ``c-ip`` from ``ip_address`` and ``sc-bytes`` from ``http_response_bytes``. The
+taxonomy describes ``cs-uri-query`` as the query only, but SigmaHQ rules put path patterns in it (``../../../etc/``,
+``/mgmt/tm/util/bash``), so it holds the whole request target, path and query, like ``c-uri``; ``cs-uri-stem`` is the
+path. A request that is not "method target version" gives none of the request fields. There is no ``apache`` token,
+because the SigmaHQ rules with ``service: apache`` are written for ``error.log``, and no ``cs-referer``, which Plaso
+does not read.
+
 If not using a Plaso CSV, ReconGraph can also process **raw text logs**. In this case, the tool will treat each line as a description and use the current filename as the source.
 
 Event Identity (``--node=drain``)
@@ -65,6 +75,9 @@ Every row gets an ``event_key``, which is its node in the graph.
    * - Structured artefact (any other ``data_type``)
      - ``data_type:timestamp_desc``, or ``data_type`` for a row without ``timestamp_desc``
      - ``fs:stat:Last Access Time``, ``syslog:ssh:login:Content Modification Time``
+   * - Apache access log (``apache:access_log:entry``)
+     - ``apache:access_log:entry:cs-method:sc-status``, the method left out when the request cannot be read
+     - ``apache:access_log:entry:GET:404``
    * - Linux audit event (``selinux:line``)
      - ``auditd:audit_type``, followed by ``:system_call`` when the event has a SYSCALL record
      - ``auditd:SYSCALL:execve``, ``auditd:LOGIN:write``, ``auditd:USER_CMD``

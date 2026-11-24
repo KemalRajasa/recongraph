@@ -21,6 +21,8 @@ licensed Apache-2.0.
 log2timeline/plaso:20261027 run on `videoserver/logs/log/audit/audit.log` of `scenario_1_sudo_sshkey.zip` from
 M. Landauer, W. Hotwagner, T. Boenke, F. Skopik, M. Wurzenberger, *Cyber Attack Manifestations - Log Data Set (CAM-LDS)*,
 Zenodo, 2026, [doi:10.5281/zenodo.18861762](https://doi.org/10.5281/zenodo.18861762), licensed CC-BY-4.0.
+`linux_apache.jsonl`: 10 whole, unchanged lines of the same Plaso output, from `videoserver/logs/log/apache2/access.log*`
+of the same archive, one per kind of request (scanner requests of ffuf and Nikto, a query, other methods, `::1`).
 
 `winevtx_golden_e9b07b9.json`: the winevtx rows of `../plaso_sample.jsonl`, `../sysmon_lsass.jsonl` and
 `../eventlog_cleared.jsonl` as loaded by the adapter at commit e9b07b9.

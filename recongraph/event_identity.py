@@ -8,6 +8,7 @@ structured artefact    ``data_type:timestamp_desc``, or ``data_type`` for a    `
                        row without ``timestamp_desc``                          ``syslog:ssh:login:Content Modification Time``
 Linux audit event      ``auditd:audit_type``, ``:system_call`` if the event    ``auditd:SYSCALL:execve``, ``auditd:USER_CMD``
 (``selinux:line``)     has a SYSCALL record (see SUBTYPE_KEYS)
+Apache access log      ``apache:access_log:entry:method:status``               ``apache:access_log:entry:GET:404``
 free text              ``data_type:template``, template mined by Drain3        ``syslog:line:Server listening on
                                                                                <IP> port <NUM>.``
 =====================  ======================================================  ===================================
@@ -43,6 +44,7 @@ FREE_TEXT_DATA_TYPES = frozenset({
 # columns (empty ones left out), not data_type:timestamp_desc, which is the same for every row of these types.
 SUBTYPE_KEYS = {
     "selinux:line": ("auditd", ("audit_type", "system_call")),  # Linux audit log, one row per audit event
+    "apache:access_log:entry": ("apache:access_log:entry", ("cs-method", "sc-status")),  # Apache access log
 }
 # The raw log line, without the sentence Plaso's formatter builds around it.
 RAW_TEXT_COLUMNS = ("message_body", "body")

@@ -99,6 +99,19 @@ def test_audit_key_does_not_use_the_timestamp_meaning():
     assert assign_event_keys(pd.DataFrame([row]))[0] == ["auditd:AVC"]
 
 
+def test_apache_key_is_method_and_status():
+    keys, drain3, sources = assign_event_keys(load_plaso_jsonl(PLASO / "linux_apache.jsonl"))
+    prefix = "apache:access_log:entry:"
+    assert sorted(keys) == sorted(prefix + k for k in ("GET:404", "GET:404", "GET:404", "GET:400", "GET:200", "POST:404",
+                                                       "OPTIONS:200", "OPTIONS:200", "PROPFIND:400", "TRACE:302"))
+    assert drain3["miners"] == {} and sources["structured"] == {"apache:access_log:entry": 10}
+
+
+def test_apache_key_without_a_parsable_request_is_the_status():
+    row = {"data_type": "apache:access_log:entry", "timestamp_desc": "Recorded Time", "message": "x", "sc-status": "400"}
+    assert assign_event_keys(pd.DataFrame([row]))[0] == ["apache:access_log:entry:400"]
+
+
 def test_structured_ssh_events_do_not_use_drain3():
     keys = _keys(PLASO / "linux_auth.jsonl")
     assert {f"syslog:ssh:{kind}:Content Modification Time" for kind in ("login", "failed_connection", "opened_connection")} <= set(keys)

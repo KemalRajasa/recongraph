@@ -28,6 +28,15 @@ LINUX_FILE_SERVICES = [(re.compile(r"(auth\.log|secure)([.-]\d+)*(\.(gz|bz2|xz))
 # Linux syslog/journal `reporter` (program name) -> Sigma `service:`.
 LINUX_REPORTER_SERVICES = {"sshd": "sshd", "cron": "cron", "crond": "cron", "vsftpd": "vsftpd"}
 
+# Apache access log -> Sigma `category: webserver` (no `apache` token: SigmaHQ's `service: apache` rules read error.log).
+APACHE_DATA_TYPE = "apache:access_log:entry"
+DATA_TYPE_LOG_TYPES = {APACHE_DATA_TYPE: ["webserver"]}
+# Plaso Apache attribute -> Sigma webserver field (W3C names, Sigma taxonomy appendix)
+APACHE_FIELDS = {"http_response_code": "sc-status", "http_request_user_agent": "cs-user-agent", "ip_address": "c-ip",
+                 "http_response_bytes": "sc-bytes"}
+# http_request: method, request target and protocol version
+_HTTP_REQUEST = re.compile(r"(\S+) (\S+) (\S+)")
+
 # Plaso's selinux parser reads the Linux audit log; one audit event (an audit_serial at one time) is several records.
 AUDIT_DATA_TYPE = "selinux:line"
 # The order auditd writes an event's records in, after the record that triggered the event (CONFIG_CHANGE, LOGIN, ...),
@@ -224,8 +233,25 @@ def _event_attributes(obj: dict, row: dict, stats: Counter) -> dict:
     return fields
 
 
+def _webserver_fields(row: dict) -> dict:
+    """Sigma webserver fields of an Apache access log row.
+
+    ``cs-uri-query`` is the whole request target (path and query), as SigmaHQ rules use it (path traversal patterns),
+    although the taxonomy names only the query; ``c-uri`` is the same target, ``cs-uri-stem`` its path. A request that is
+    not "method target version" gives no request fields.
+    """
+    fields = {sigma: row[plaso] for plaso, sigma in APACHE_FIELDS.items() if isinstance(row.get(plaso), str)}
+    if request := _HTTP_REQUEST.fullmatch(row.get("http_request") or ""):
+        method, target, version = request.groups()
+        fields.update({"cs-method": method, "c-uri": target, "cs-uri-stem": target.partition("?")[0],
+                       "cs-uri-query": target, "cs-version": version})
+    return fields
+
+
 def _generic_log_type(row: dict) -> list:
     """Sigma logsource tokens for a non-winevtx event; see load_plaso_jsonl for the table."""
+    if row.get("data_type") in DATA_TYPE_LOG_TYPES:
+        return list(DATA_TYPE_LOG_TYPES[row["data_type"]])
     product = DATA_TYPE_PRODUCTS.get(str(row.get("data_type") or "").partition(":")[0])
     if product != "linux":
         return [product] if product else []
@@ -255,6 +281,8 @@ def _record(obj: dict, where: str, stats: Counter) -> dict:
     }
     if obj.get("parser") != "winevtx":
         row = {**row, **_event_attributes(obj, row, stats)}
+        if row["data_type"] == APACHE_DATA_TYPE:
+            row.update(_webserver_fields(row))
         log_type = _generic_log_type(row)
         stats["unmapped", row["data_type"]] += not log_type
         return {**row, "log_type": log_type}
@@ -399,6 +427,8 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
                                                 + sshd / cron / vsftpd from the syslog ``reporter``,
                                                 + auditd for the Linux audit log (``selinux:line``),
                                                 + process_creation for its successful execve events
+    apache:access_log:entry (exact data_type)   webserver, with the Sigma webserver fields of
+                                                ``_webserver_fields`` (cs-method, cs-uri-query, sc-status, ...)
     android                                     android
     ios                                         ios
     anything else (fs:stat, windows:*, ...)     [] (rows kept, count logged; strict mode then matches

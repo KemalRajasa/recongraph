@@ -21,6 +21,9 @@ Unreleased
   and are matched record by record on auditd field names (``audit_records`` column), hex-encoded text decoded.
 - **Changed Sigma matching:** a successful ``execve`` in a Linux audit log is also a ``process_creation`` event, with
   ``Image``, ``CommandLine`` and ``CurrentDirectory`` columns, so Linux ``process_creation`` rules apply.
+- **Changed input:** an Apache access log in Plaso JSONL (``apache:access_log:entry``) gets the logsource token
+  ``webserver`` and the Sigma webserver fields (``cs-uri-query`` holds path and query); its ``--node=drain`` key is
+  ``apache:access_log:entry:<method>:<status>`` instead of one ``apache:access_log:entry:Recorded Time`` node.
 - **Changed Sigma matching:** rule values are Sigma strings: ``*`` and ``?`` are wildcards and ``\*``, ``\?``, ``\\``
   escapes, as in the Sigma specification and Hayabusa. Before, values were compared as written, so rules with a
   wildcard or a double backslash (``\\Users\\*\\Downloads\\``, ``\\\\.\\pipe``) did not match what they describe.

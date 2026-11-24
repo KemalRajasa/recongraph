@@ -254,6 +254,7 @@ Event identity in `--node=drain`:
 | EVTX | `Provider:EventID` | `Microsoft-Windows-Sysmon:1` |
 | Structured artefact | `data_type:timestamp_desc` (`data_type` alone for a row without `timestamp_desc`). The key depends only on the row, not on the rest of the file | `fs:stat:Last Access Time`, `syslog:ssh:login:Content Modification Time` |
 | Linux audit event (`selinux:line`): the records of one event are one row | `auditd:audit_type`, then `:system_call` when the event has a SYSCALL record | `auditd:SYSCALL:execve`, `auditd:USER_CMD` |
+| Apache access log (`apache:access_log:entry`) | `apache:access_log:entry:method:status` | `apache:access_log:entry:GET:404` |
 | Free text: `syslog:line`, `systemd:journal`, `android:logcat`, `ios:lockdownd_log:entry`, `ios:sysdiag_log:entry`, `ios:sysdiagnose:logd:line` | `data_type:template` | `syslog:line:Server listening on <IP> port <NUM>.` |
 
 - Drain3 is never used for EVTX, because `EventID` already names the kind of event. It runs with one template
@@ -307,6 +308,14 @@ records. Hex-encoded text (EXECVE arguments, `proctitle`, `cmd`, ...) is decoded
 A successful `execve` is also a `process_creation` event with `Image`, `CommandLine`
 and, when the event has a CWD record, `CurrentDirectory`; `ParentImage`,
 `ParentCommandLine` and `User` are not available from the audit log.
+
+An Apache access log (Plaso `apache:access_log:entry`) gets the logsource
+`webserver` and the Sigma webserver fields `cs-method`, `c-uri`, `cs-uri-stem`,
+`cs-uri-query`, `cs-version`, `sc-status`, `cs-user-agent`, `c-ip` and `sc-bytes`.
+`cs-uri-query` holds the whole request target (path and query), as SigmaHQ rules
+use it for path patterns such as `../../../etc/`, although the Sigma taxonomy names
+only the query; `cs-uri-stem` holds the path. There is no `apache` token: the
+SigmaHQ rules with `service: apache` are written for `error.log`.
 
 ```bash
 psort.py -o json_line -w timeline.jsonl timeline.plaso
