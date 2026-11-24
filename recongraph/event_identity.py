@@ -6,6 +6,8 @@ Row                    Identity (``event_key``)                                E
 EVTX                   ``Provider:EventID``                                    ``Microsoft-Windows-Sysmon:1``
 structured artefact    ``data_type:timestamp_desc``, or ``data_type`` for a    ``fs:stat:Last Access Time``,
                        row without ``timestamp_desc``                          ``syslog:ssh:login:Content Modification Time``
+Linux audit event      ``auditd:audit_type``, ``:system_call`` if the event    ``auditd:SYSCALL:execve``, ``auditd:USER_CMD``
+(``selinux:line``)     has a SYSCALL record (see SUBTYPE_KEYS)
 free text              ``data_type:template``, template mined by Drain3        ``syslog:line:Server listening on
                                                                                <IP> port <NUM>.``
 =====================  ======================================================  ===================================
@@ -37,9 +39,16 @@ FREE_TEXT_DATA_TYPES = frozenset({
     "syslog:line",
     "systemd:journal",
 })
+# Structured data_types whose rows are one kind of record with a subtype: the key is a name followed by the subtype
+# columns (empty ones left out), not data_type:timestamp_desc, which is the same for every row of these types.
+SUBTYPE_KEYS = {
+    "selinux:line": ("auditd", ("audit_type", "system_call")),  # Linux audit log, one row per audit event
+}
 # The raw log line, without the sentence Plaso's formatter builds around it.
 RAW_TEXT_COLUMNS = ("message_body", "body")
-_COLUMNS = ("parser", "data_type", "timestamp_desc", "message", "Provider_Name", "EventID", "Channel", *RAW_TEXT_COLUMNS)
+_SUBTYPE_COLUMNS = tuple(dict.fromkeys(column for _, columns in SUBTYPE_KEYS.values() for column in columns))
+_COLUMNS = ("parser", "data_type", "timestamp_desc", "message", "Provider_Name", "EventID", "Channel", *RAW_TEXT_COLUMNS,
+            *_SUBTYPE_COLUMNS)
 
 DRAIN3_CONFIG = {"sim_th": 0.4, "depth": 4, "max_children": 100, "mask_prefix": "<", "mask_suffix": ">"}
 # Order matters: a path or IP holds numbers, and a GUID holds hex.
@@ -139,6 +148,9 @@ def assign_event_keys(df: pd.DataFrame) -> tuple[list, dict, dict]:
         if row["parser"] == "winevtx":
             return _evtx_key(row)
         if not _is_free_text(row):
+            if row["data_type"] in SUBTYPE_KEYS:
+                name, columns = SUBTYPE_KEYS[row["data_type"]]
+                return ":".join([name, *(row[column] for column in columns if row[column])])
             return f"{source}:{row['timestamp_desc']}" if row["timestamp_desc"] else source
         text = _raw_text(row)
         if not text:

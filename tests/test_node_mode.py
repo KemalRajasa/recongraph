@@ -86,6 +86,19 @@ def test_structured_key_does_not_depend_on_the_rest_of_the_file():
     assert assign_event_keys(pd.DataFrame(alone))[0][0] == assign_event_keys(pd.DataFrame(mixed))[0][0] == "fs:stat:A"
 
 
+def test_audit_key_is_record_type_and_syscall():
+    keys, drain3, sources = assign_event_keys(load_plaso_jsonl(PLASO / "linux_audit.jsonl"))
+    assert keys == ["auditd:SYSCALL:connect", "auditd:USER_END", "auditd:CRED_DISP", "auditd:CONFIG_CHANGE:sendto",
+                    "auditd:SYSCALL:execve", "auditd:SYSCALL:execve", "auditd:SYSCALL:connect", "auditd:SERVICE_START",
+                    "auditd:LOGIN:write", "auditd:SYSCALL:execve", "auditd:SYSCALL:execve", "auditd:USER_CMD"]
+    assert drain3["miners"] == {} and sources["structured"] == {"selinux:line": 12}
+
+
+def test_audit_key_does_not_use_the_timestamp_meaning():
+    row = {"data_type": "selinux:line", "timestamp_desc": "Content Modification Time", "message": "x", "audit_type": "AVC"}
+    assert assign_event_keys(pd.DataFrame([row]))[0] == ["auditd:AVC"]
+
+
 def test_structured_ssh_events_do_not_use_drain3():
     keys = _keys(PLASO / "linux_auth.jsonl")
     assert {f"syslog:ssh:{kind}:Content Modification Time" for kind in ("login", "failed_connection", "opened_connection")} <= set(keys)

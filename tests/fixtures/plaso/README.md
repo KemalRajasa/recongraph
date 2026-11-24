@@ -17,5 +17,10 @@ licensed Apache-2.0.
 | ios_logd.jsonl | logd.0.log |
 | filestat_image_dir.jsonl | syslog_image.dd |
 
+`linux_audit.jsonl`: 40 whole, unchanged lines (12 audit events) of `psort -o json_line` output of
+log2timeline/plaso:20261027 run on `videoserver/logs/log/audit/audit.log` of `scenario_1_sudo_sshkey.zip` from
+M. Landauer, W. Hotwagner, T. Boenke, F. Skopik, M. Wurzenberger, *Cyber Attack Manifestations - Log Data Set (CAM-LDS)*,
+Zenodo, 2026, [doi:10.5281/zenodo.18861762](https://doi.org/10.5281/zenodo.18861762), licensed CC-BY-4.0.
+
 `winevtx_golden_e9b07b9.json`: the winevtx rows of `../plaso_sample.jsonl`, `../sysmon_lsass.jsonl` and
 `../eventlog_cleared.jsonl` as loaded by the adapter at commit e9b07b9.

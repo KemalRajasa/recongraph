@@ -47,6 +47,9 @@ Every row gets an ``event_key``, which is its node in the graph.
    * - Structured artefact (any other ``data_type``)
      - ``data_type:timestamp_desc``, or ``data_type`` for a row without ``timestamp_desc``
      - ``fs:stat:Last Access Time``, ``syslog:ssh:login:Content Modification Time``
+   * - Linux audit event (``selinux:line``)
+     - ``auditd:audit_type``, followed by ``:system_call`` when the event has a SYSCALL record
+     - ``auditd:SYSCALL:execve``, ``auditd:LOGIN:write``, ``auditd:USER_CMD``
    * - Free text (``syslog:line``, ``systemd:journal``, ``android:logcat``, ``ios:lockdownd_log:entry``, ``ios:sysdiag_log:entry``, ``ios:sysdiagnose:logd:line``)
      - ``data_type:template``
      - ``syslog:line:Server listening on <IP> port <NUM>.``
@@ -56,6 +59,13 @@ Every row gets an ``event_key``, which is its node in the graph.
 *   **Unlisted data types** are structured: one node per data type and timestamp meaning, which never merges two data
     types. The key depends only on the row, so the same event gets the same key in every input. A log format that needs
     templates is one entry in ``recongraph.event_identity.FREE_TEXT_DATA_TYPES``.
+*   **Linux audit log** (``audit.log``, Plaso ``data_type`` ``selinux:line``): the records of one audit event (same file,
+    timestamp and ``audit_serial``) are one row, put back in the order auditd wrote them, which psort does not keep: the
+    record that triggered the event (``CONFIG_CHANGE``, ``LOGIN``, ...), then SYSCALL, BPRM_FCAPS, EXECVE, SOCKADDR, CWD,
+    PATH by item number, and PROCTITLE. ``audit_type`` and the other columns come from the first record that has them;
+    ``message`` and ``message_body`` join the records' values with newlines. Rows with one timestamp follow the serial
+    number. ``timestamp_desc`` is left out of the key because it is the same for every audit event. Other subtyped data
+    types are one entry in ``recongraph.event_identity.SUBTYPE_KEYS``.
 *   **Plaso CSV** has no ``data_type`` or XML fields. EVTX rows use ``Source Name:EventID`` from ``message``, without
     Drain3. Other rows use ``parser`` in place of ``data_type``, and ``text/*`` parsers count as free text, on ``message``.
     CSV keeps two rows per EVTX record (creation and written time) and all rows are mapped.

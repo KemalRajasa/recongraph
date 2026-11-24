@@ -1,8 +1,10 @@
 """Generic Plaso JSONL adapter: non-winevtx data_types, log_type tokens, hex normalization, winevtx unchanged.
 
-Fixtures in tests/fixtures/plaso/ are cut from Plaso test_data parsed with log2timeline/plaso:20260720 (see README.md).
+Fixtures in tests/fixtures/plaso/ are cut from Plaso test_data parsed with log2timeline/plaso:20260720, and
+linux_audit.jsonl from CAM-LDS parsed with log2timeline/plaso:20261027 (see README.md).
 """
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -127,6 +129,77 @@ def test_strict_logsource_for_linux_events(tmp_path, name, logsource, hits):
     keyword = "server listening" if "auth" in name else "test of threadtime"
     df = SigmaLabel(str(PLASO / name), _rule(tmp_path, logsource, keyword), flexible_mode=False).run()
     assert (df["sigma"] == "Synthetic[low]").sum() == hits
+
+
+# --- Linux audit.log (selinux:line): one row per audit event ---
+
+AUDIT = PLASO / "linux_audit.jsonl"
+
+
+def _audit_rows(serial):
+    return [r for r in _rows("linux_audit.jsonl") if r["audit_serial"] == serial]
+
+
+def _record_types(message):
+    return [re.match(r"\[audit_type: (\w+)", line).group(1) for line in message.split("\n")]
+
+
+def test_audit_records_of_one_event_become_one_row(caplog):
+    with caplog.at_level("INFO"):
+        df = load_plaso_jsonl(AUDIT)
+    assert len(df) == 12 and (df["data_type"] == "selinux:line").all()
+    assert "40 audit records merged into 12 audit events" in caplog.text
+    assert df["datetime"].is_monotonic_increasing
+
+
+def test_audit_event_takes_columns_from_its_records():
+    [row] = _audit_rows("13125")
+    assert {k: row[k] for k in ("audit_type", "system_call", "executable", "process_arguments", "file_path", "process_title")} == {
+        "audit_type": "SYSCALL", "system_call": "execve", "executable": "/usr/bin/sudo",
+        "process_arguments": "sudo dmesg -H", "file_path": "/usr/bin/sudo", "process_title": "sudo dmesg -H"}
+    assert row["log_type"] == ["linux"]
+
+
+@pytest.mark.parametrize("serial, types", [
+    ("13125", ["SYSCALL", "EXECVE", "PATH", "PATH", "PATH", "PROCTITLE"]),
+    ("34", ["CONFIG_CHANGE", "SYSCALL", "SOCKADDR", "PATH", "PROCTITLE"]),
+    ("4291", ["LOGIN", "SYSCALL", "PROCTITLE"]),
+    ("13129", ["USER_CMD"]),
+])
+def test_audit_records_follow_the_order_auditd_wrote(serial, types):
+    [row] = _audit_rows(serial)
+    assert _record_types(row["message"]) == types
+    assert len(row["message_body"].split("\n")) == len(types)
+
+
+def test_audit_path_and_split_execve_records_keep_their_numbering():
+    [sudo] = _audit_rows("13125")
+    assert re.findall(r"\bitem=(\d+)", sudo["message_body"]) == ["0", "1", "2"]
+    [find] = _audit_rows("4775")
+    execve = [line for line in find["message_body"].split("\n") if line.startswith(("argc=", "a537="))]
+    assert [line[:5] for line in execve] == ["argc=", "a537="]
+
+
+def test_audit_event_columns_come_from_the_record_that_triggered_it():
+    [login] = _audit_rows("4291")
+    assert (login["audit_type"], login["system_call"]) == ("LOGIN", "write")
+
+
+def test_audit_serial_is_an_event_only_together_with_its_time():
+    assert len({r["datetime"] for r in _audit_rows("2741")}) == 2
+
+
+def test_audit_events_with_one_timestamp_follow_the_serial():
+    tied = [r["audit_serial"] for r in _rows("linux_audit.jsonl") if r["datetime"] == "2025-06-18T13:52:36.123000+00:00"]
+    assert tied == ["2779", "2780"]
+
+
+def test_audit_records_of_different_files_are_not_merged(tmp_path):
+    line = next(l for l in AUDIT.read_text(encoding="utf-8").splitlines() if '"USER_CMD"' in l)
+    other = json.loads(line)
+    other["pathspec"] = {**other["pathspec"], "location": "/var/log/audit/audit.log.1"}
+    (tmp_path / "a.jsonl").write_text(line + "\n" + json.dumps(other) + "\n", encoding="utf-8")
+    assert len(load_plaso_jsonl(tmp_path / "a.jsonl")) == 2
 
 
 # --- hex normalization (winevtx) ---

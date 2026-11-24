@@ -14,6 +14,9 @@ Unreleased
   ``recongraph_agg.graphml``, ``recongraph_temporal.graphml`` and ``recongraph_meta.json`` always present. ``--export-events`` replaces
   ``--export-csv``, ``--export-sigma`` takes no value, ``--temporal-output`` is removed, and ``recongraph_meta.json`` replaces the
   ``<graph>.meta.json`` files mentioned above. An earlier run in the folder stops the run unless ``--overwrite`` is given.
+- **Changed input:** a Linux audit log in Plaso JSONL (``selinux:line``) becomes one row per audit event instead of one per
+  record, with the records in the order auditd wrote them; its ``--node=drain`` key is ``auditd:<audit_type>[:<system_call>]``
+  instead of one ``selinux:line:Content Modification Time`` node.
 
 v0.0.3
 ------

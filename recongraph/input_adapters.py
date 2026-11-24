@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import xml.etree.ElementTree as ET
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -27,6 +27,14 @@ LINUX_FILE_SERVICES = [(re.compile(r"(auth\.log|secure)([.-]\d+)*(\.(gz|bz2|xz))
                        (re.compile(r"(syslog|messages)([.-]\d+)*(\.(gz|bz2|xz))?"), "syslog")]
 # Linux syslog/journal `reporter` (program name) -> Sigma `service:`.
 LINUX_REPORTER_SERVICES = {"sshd": "sshd", "cron": "cron", "crond": "cron", "vsftpd": "vsftpd"}
+
+# Plaso's selinux parser reads the Linux audit log; one audit event (an audit_serial at one time) is several records.
+AUDIT_DATA_TYPE = "selinux:line"
+# The order auditd writes an event's records in, after the record that triggered the event (CONFIG_CHANGE, LOGIN, ...),
+# with PROCTITLE last; psort output does not keep it. Checked on every event of the CAM-LDS videoserver audit.log.
+AUDIT_RECORD_ORDER = ("SYSCALL", "BPRM_FCAPS", "EXECVE", "SOCKADDR", "CWD", "PATH")
+# PATH records follow their item number, EXECVE records (long argument lists are split) their first argument.
+_AUDIT_RECORD_NUMBER = re.compile(r"\b(?:item=|a)(\d+)\b")
 
 # EVTX Channel -> Sigma `service:` (names as used in sigma/rules/windows/builtin).
 CHANNEL_SERVICES = {
@@ -252,6 +260,32 @@ def _record(obj: dict, where: str, stats: Counter) -> dict:
     return {**row, **fields, **aliases, **matching_channel, "log_type": _log_type(fields)}
 
 
+def _audit_record_rank(row: dict) -> tuple:
+    kind = row.get("audit_type")
+    if kind == "PROCTITLE":
+        position = len(AUDIT_RECORD_ORDER) + 1
+    else:
+        position = AUDIT_RECORD_ORDER.index(kind) + 1 if kind in AUDIT_RECORD_ORDER else 0
+    number = _AUDIT_RECORD_NUMBER.search(row.get("message_body") or "")
+    return position, int(number.group(1)) if number else 0, row.get("message") or ""
+
+
+def _audit_event(records: list) -> dict:
+    """One row for the records of one audit event, in the order auditd wrote them.
+
+    Columns come from the records in that order, the first value winning, so the record that triggered the event (or
+    SYSCALL) sets ``audit_type``; ``message`` and ``message_body`` are the records' values joined with newlines.
+    """
+    records = sorted(records, key=_audit_record_rank)
+    event = {}
+    for record in records:
+        for key, value in record.items():
+            event.setdefault(key, value)
+    for column in ("message", "message_body"):
+        event[column] = "\n".join(record[column] for record in records if record.get(column))
+    return event
+
+
 def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
     """Load `psort -o json_line` output: one row per event, event fields as columns, sorted by time.
 
@@ -272,8 +306,13 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
     anything else (fs:stat, windows:*, ...)     [] (rows kept, count logged; strict mode then matches
                                                 only rules without a logsource)
     ==========================================  =========================================================
+
+    Linux audit log (``selinux:line``): the records of one audit event (same source file, timestamp and
+    ``audit_serial``) become one row, see ``_audit_event``. Rows with one timestamp follow the EVTX record number or
+    the audit serial number.
     """
     rows = []
+    audit_events = defaultdict(list)
     stats = Counter()
     with Path(path).open(encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
@@ -289,8 +328,16 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
                 continue
             if not keep_all_timestamps and obj.get("parser") == "winevtx" and obj.get("timestamp_desc") != "Creation Time":
                 continue
-            rows.append(_record(obj, f"{path}:{lineno}", stats))
+            row = _record(obj, f"{path}:{lineno}", stats)
+            if row["data_type"] == AUDIT_DATA_TYPE and row.get("audit_serial"):
+                audit_events[row.get("source_path") or row["display_name"], row["_ts"], row["audit_serial"]].append(row)
+            else:
+                rows.append(row)
+    rows += [_audit_event(records) for records in audit_events.values()]
 
+    if audit_events:
+        logger.info("%s: %d audit records merged into %d audit events",
+                    path, sum(map(len, audit_events.values())), len(audit_events))
     if stats["recovered"] or stats["failed"]:
         logger.info("%s: %d records recovered by removing XML-illegal characters, %d still unparsable",
                     path, stats["recovered"], stats["failed"])
@@ -303,7 +350,11 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
     if before_epoch.any():
         logger.info("%s: dropped %d rows with timestamps before 1970-01-01", path, int(before_epoch.sum()))
     df = df[~before_epoch]
-    record_id = pd.to_numeric(df["EventRecordID"], errors="coerce") if "EventRecordID" in df else 0
+    # ties on the timestamp: EVTX record number or audit serial number, columns that no row has both of
+    record_id = pd.Series(float("nan"), index=df.index)
+    for column in ("EventRecordID", "audit_serial"):
+        if column in df:
+            record_id = record_id.fillna(pd.to_numeric(df[column], errors="coerce"))
     df = (df.assign(_ts=pd.to_numeric(df["_ts"], errors="coerce"), _rid=record_id)
             .sort_values(["_ts", "_rid"], kind="stable", na_position="last")
             .drop(columns=["_ts", "_rid"])

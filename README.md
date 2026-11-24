@@ -253,6 +253,7 @@ Event identity in `--node=drain`:
 |---|---|---|
 | EVTX | `Provider:EventID` | `Microsoft-Windows-Sysmon:1` |
 | Structured artefact | `data_type:timestamp_desc` (`data_type` alone for a row without `timestamp_desc`). The key depends only on the row, not on the rest of the file | `fs:stat:Last Access Time`, `syslog:ssh:login:Content Modification Time` |
+| Linux audit event (`selinux:line`): the records of one event are one row | `auditd:audit_type`, then `:system_call` when the event has a SYSCALL record | `auditd:SYSCALL:execve`, `auditd:USER_CMD` |
 | Free text: `syslog:line`, `systemd:journal`, `android:logcat`, `ios:lockdownd_log:entry`, `ios:sysdiag_log:entry`, `ios:sysdiagnose:logd:line` | `data_type:template` | `syslog:line:Server listening on <IP> port <NUM>.` |
 
 - Drain3 is never used for EVTX, because `EventID` already names the kind of event. It runs with one template
