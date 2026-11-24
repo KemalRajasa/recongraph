@@ -315,6 +315,12 @@ recongraph -f timeline.jsonl -r ./sigma/rules/windows --strict
 A directory of standardized Sigma rules in `.yml` format that define the detection
 logic used to label events. See [Sigma Rules Setup](#sigma-rules-setup).
 
+Values are Sigma strings, case-insensitive, as in the Sigma specification and Hayabusa: `*` matches any text and
+`?` one character; `\*`, `\?` and `\\` are the character itself, and a backslash before any other character is a
+backslash (so `\\cmd.exe` and `\cmd.exe` are the same value, and a backslash followed by the `*` wildcard is `\\*`).
+This holds for keywords and for `contains`, `startswith`, `endswith` and plain values; `re`, `cidr`, the numeric
+comparisons, `fieldref` and base64-encoded values are not Sigma strings.
+
 ## Output
 
 Each run writes to one folder, with fixed file names. In both node modes the two graphs and the metadata are always

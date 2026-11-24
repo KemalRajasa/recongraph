@@ -127,6 +127,17 @@ Rules should be in **YAML (.yml)** format and follow the standard Sigma specific
 *   **Detection**: The selection logic (strings, lists, or dictionaries) used to match log content.
 *   **Level**: To assign severity (Critical, High, Medium, Low) to the resulting graph nodes.
 
+Values are Sigma strings and compared case-insensitively, following the Sigma specification (*String Wildcard* and
+*Escape Character*) and Hayabusa, read from left to right:
+
+*   ``*`` matches any text (newlines included) and ``?`` exactly one character.
+*   ``\*``, ``\?`` and ``\\`` are the character itself; a backslash before any other character is a backslash. So
+    ``\\cmd.exe`` and ``\cmd.exe`` are the same value, ``\\\\`` is two backslashes, ``\\*`` is a backslash followed by
+    the ``*`` wildcard and ``\\\*`` a backslash followed by an asterisk.
+*   This applies to keywords and to plain, ``contains``, ``startswith`` and ``endswith`` values (after ``windash``).
+    ``re``, ``cidr``, ``lt``/``lte``/``gt``/``gte``, ``fieldref`` (the other field's value is text) and
+    ``base64``/``base64offset`` values are not Sigma strings.
+
 Rule Location
 ^^^^^^^^^^^^^
 

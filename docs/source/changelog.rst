@@ -19,6 +19,9 @@ Unreleased
   instead of one ``selinux:line:Content Modification Time`` node.
 - **Changed Sigma matching:** Linux audit events get the logsource token ``auditd``, so ``service: auditd`` rules apply,
   and are matched record by record on auditd field names (``audit_records`` column), hex-encoded text decoded.
+- **Changed Sigma matching:** rule values are Sigma strings: ``*`` and ``?`` are wildcards and ``\*``, ``\?``, ``\\``
+  escapes, as in the Sigma specification and Hayabusa. Before, values were compared as written, so rules with a
+  wildcard or a double backslash (``\\Users\\*\\Downloads\\``, ``\\\\.\\pipe``) did not match what they describe.
 
 v0.0.3
 ------

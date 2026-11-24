@@ -1,5 +1,6 @@
 import base64
 import csv
+import functools
 import ipaddress
 import itertools
 import json
@@ -81,6 +82,58 @@ def _base64offset(pattern: str) -> List[str]:
 _TRANSFORMS = {"windash": _windash, "base64": _base64, "base64offset": _base64offset}
 SUPPORTED_MODIFIERS = frozenset({"contains", "startswith", "endswith", "all", "re", "i", "m", "s", "cidr", "fieldref",
                                  "exists", "lt", "lte", "gt", "gte", *_TRANSFORMS})
+
+# Sigma string values (sigma-rules-specification, "String Wildcard" and "Escape Character"), read from left to right as
+# Hayabusa does: * is any text, ? one character, \* \? \\ the character itself, a backslash before anything else stays.
+_SIGMA_ESCAPABLE = "*?\\"
+_SIGMA_ANCHORS = {"equals": "(?:{})\\Z", "contains": "{}", "startswith": "{}", "endswith": "(?:{})\\Z"}
+
+
+@functools.lru_cache(maxsize=None)
+def _sigma_string(pattern: str) -> tuple:
+    """(text, None) for a Sigma value without wildcards, its escapes resolved; (None, regex) for one with wildcards."""
+    text, regex, wildcard, i = [], [], False, 0
+    while i < len(pattern):
+        char = pattern[i]
+        if char == "\\" and i + 1 < len(pattern) and pattern[i + 1] in _SIGMA_ESCAPABLE:
+            char, i = pattern[i + 1], i + 1
+        elif char in "*?":
+            wildcard = True
+            regex.append(".*" if char == "*" else ".")
+            i += 1
+            continue
+        text.append(char)
+        regex.append(re.escape(char))
+        i += 1
+    return (None, "".join(regex)) if wildcard else ("".join(text), None)
+
+
+@functools.lru_cache(maxsize=None)
+def _sigma_regex(regex: str, mode: str) -> re.Pattern:
+    return re.compile(_SIGMA_ANCHORS[mode].format(regex), re.DOTALL)
+
+
+def sigma_compare(value: str, pattern: str, mode: str = "equals") -> bool:
+    """Compare value with a Sigma string value: ``mode`` is equals, contains, startswith or endswith.
+
+    Both are compared as given; callers lowercase them for Sigma's case-insensitive matching.
+    """
+    text, regex = _sigma_string(pattern)
+    if regex is None:
+        return _compare_text(value, text, mode)
+    compiled = _sigma_regex(regex, mode)
+    # equals and startswith are anchored at the start, contains and endswith may start anywhere
+    return bool(compiled.match(value) if mode in ("equals", "startswith") else compiled.search(value))
+
+
+def _compare_text(value: str, text: str, mode: str) -> bool:
+    if mode == "contains":
+        return text in value
+    if mode == "startswith":
+        return value.startswith(text)
+    if mode == "endswith":
+        return value.endswith(text)
+    return value == text
 
 
 _RULE_ID = re.compile(r"[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}")
@@ -342,9 +395,10 @@ class SigmaMatcher:
         """
         Matches a simple pattern string against a list of search fields.
 
-        This function checks if the pattern exists as a substring in any of the provided search fields.
+        This function checks if the pattern, a Sigma string (wildcards and escapes), occurs in any of the
+        provided search fields. Both are lowercase.
         """
-        return any(pattern in field for field in search_fields)
+        return any(sigma_compare(field, pattern, "contains") for field in search_fields)
 
     def _get_search_fields(self, log_entry: Dict) -> List[str]:
         """
@@ -422,8 +476,9 @@ class SigmaMatcher:
         Match a pattern against a field value under a modifier chain.
 
         String comparisons are case-insensitive, except after base64/base64offset and for
-        ``re`` without ``i`` (Sigma semantics). cidr, lt/lte/gt/gte and fieldref do not match
-        values they cannot interpret.
+        ``re`` without ``i`` (Sigma semantics). The pattern is a Sigma string (``sigma_compare``:
+        wildcards and escapes), except after base64/base64offset, fieldref and the modifiers that
+        do not compare text. cidr, lt/lte/gt/gte and fieldref do not match values they cannot interpret.
         """
         if "re" in modifiers:
             flags = sum(f for m, f in (("i", re.IGNORECASE), ("m", re.MULTILINE), ("s", re.DOTALL)) if m in modifiers)
@@ -443,12 +498,14 @@ class SigmaMatcher:
             pattern = self._get_field_value(log_entry or {}, pattern)
             if pattern is None:
                 return False
-        if not ({"base64", "base64offset"} & set(modifiers)):
-            value, pattern = value.lower(), pattern.lower()
-        if "contains" in modifiers: return pattern in value
-        if "startswith" in modifiers: return value.startswith(pattern)
-        if "endswith" in modifiers: return value.endswith(pattern)
-        return value == pattern
+        mode = next((m for m in ("contains", "startswith", "endswith") if m in modifiers), "equals")
+        if {"base64", "base64offset"} & set(modifiers):
+            # the encoded text, case-sensitive; no loaded rule has * ? or \ in a base64 value
+            return _compare_text(value, pattern, mode)
+        if "fieldref" in modifiers:
+            # the other field's value is text, not a Sigma string
+            return _compare_text(value.lower(), pattern.lower(), mode)
+        return sigma_compare(value.lower(), pattern.lower(), mode)
 
     def _evaluate_condition(self, condition: str, selections: Dict[str, bool]) -> bool:
         """
