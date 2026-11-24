@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from recongraph.input_adapters import GENERIC_COLUMNS, _audit_fields, _unpad_hex, load_plaso_jsonl
+from recongraph.input_adapters import GENERIC_COLUMNS, _audit_fields, _audit_process, _unpad_hex, load_plaso_jsonl
 from recongraph.recongraph import SigmaLabel
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -157,7 +157,7 @@ def test_audit_event_takes_columns_from_its_records():
     assert {k: row[k] for k in ("audit_type", "system_call", "executable", "process_arguments", "file_path", "process_title")} == {
         "audit_type": "SYSCALL", "system_call": "execve", "executable": "/usr/bin/sudo",
         "process_arguments": "sudo dmesg -H", "file_path": "/usr/bin/sudo", "process_title": "sudo dmesg -H"}
-    assert row["log_type"] == ["linux", "auditd"]
+    assert row["log_type"] == ["linux", "auditd", "process_creation"]
 
 
 @pytest.mark.parametrize("serial, types", [
@@ -287,6 +287,68 @@ def test_auditd_event_gets_the_rules_of_all_its_records(tmp_path):
     _auditd_rule(tmp_path, "Execve", {"type": "SYSCALL", "SYSCALL": "execve", "euid": "33"})
     _auditd_rule(tmp_path, "Find", {"type": "PATH", "name": "/usr/bin/find"})
     assert _audit_sigma(tmp_path) == {"4775": "Execve[low] | Find[low]"}
+
+
+# --- Linux audit.log: a successful execve is a process_creation event ---
+
+def _audit_row(serial, timestamp=None):
+    return next(r for r in _audit_rows(serial) if timestamp is None or r["datetime"].startswith(timestamp))
+
+
+@pytest.mark.parametrize("serial, image, command_line", [
+    ("13125", "/usr/bin/sudo", "sudo dmesg -H"),
+    ("285", "/usr/bin/dash", "/bin/sh -c /bin/run-parts --exit-on-error /etc/network/if-pre-up.d"),  # Image is exe
+])
+def test_successful_execve_is_a_process_creation(serial, image, command_line):
+    row = _audit_row(serial)
+    assert (row["Image"], row["CommandLine"]) == (image, command_line)
+    assert row["log_type"] == ["linux", "auditd", "process_creation"]
+
+
+def test_process_command_line_spans_split_execve_records():
+    arguments = _audit_row("4775")["CommandLine"].split(" ")
+    assert len(arguments) == 724 and arguments[:3] == ["find", "/applications", "-name"]
+    assert arguments[537] == "snmpd.conf"  # a537, the first argument of the second EXECVE record
+
+
+@pytest.mark.parametrize("serial, timestamp", [("2741", "2025-09-22"),  # execve failed (exit=-2), no EXECVE record
+                                               ("2741", "2025-06-18"), ("13129", None), ("4291", None)])
+def test_other_audit_events_are_no_process_creation(serial, timestamp):
+    row = _audit_row(serial, timestamp)
+    assert "process_creation" not in row["log_type"]
+    assert all(not isinstance(row.get(field), str) for field in ("Image", "CommandLine", "CurrentDirectory"))
+
+
+@pytest.mark.parametrize("records, expected", [
+    ([{"type": "SYSCALL", "SYSCALL": "execve", "success": "yes", "exe": "/usr/bin/ls"},
+      {"type": "EXECVE", "argc": "3", "a0": "ls", "a1": "", "a2": "-l"}, {"type": "CWD", "cwd": "/tmp"}],
+     {"Image": "/usr/bin/ls", "CommandLine": "ls  -l", "CurrentDirectory": "/tmp"}),  # an empty argument, as proctitle
+    ([{"type": "SYSCALL", "SYSCALL": "execveat", "success": "yes", "exe": "/x"}], {"Image": "/x"}),  # no EXECVE record
+    ([{"type": "SYSCALL", "SYSCALL": "execve", "success": "no", "exe": "/x"}], {}),
+    ([{"type": "SYSCALL", "SYSCALL": "openat", "success": "yes", "exe": "/x"}], {}),
+    ([{"type": "USER_CMD", "exe": "/usr/bin/sudo"}], {}),
+])
+def test_audit_process(records, expected):
+    assert _audit_process(records) == expected
+
+
+def test_strict_process_creation_rule_matches_the_execve_event(tmp_path):
+    _auditd_rule(tmp_path, "Sudo", {"Image|endswith": "/sudo", "CommandLine|contains": "dmesg"},
+                 logsource={"product": "linux", "category": "process_creation"})
+    assert _audit_sigma(tmp_path) == {"13125": "Sudo[low]"}
+
+
+def test_process_creation_rule_does_not_match_records(tmp_path):
+    # the USER_CMD record of sudo has exe=/usr/bin/sudo, but only the execve event is a process_creation
+    _auditd_rule(tmp_path, "Exe", {"exe": "/usr/bin/sudo"}, logsource={"product": "linux", "category": "process_creation"})
+    _auditd_rule(tmp_path, "Image", {"Image": "/usr/bin/sudo"}, logsource={"product": "linux", "service": "auditd"})
+    assert _audit_sigma(tmp_path) == {}
+
+
+def test_process_creation_and_auditd_rules_add_up(tmp_path):
+    _auditd_rule(tmp_path, "Sudo", {"Image|endswith": "/sudo"}, logsource={"product": "linux", "category": "process_creation"})
+    _auditd_rule(tmp_path, "Path", {"type": "PATH", "name": "/usr/bin/sudo"})
+    assert _audit_sigma(tmp_path) == {"13125": "Path[low] | Sudo[low]"}
 
 
 def test_auditd_keyword_rule_searches_each_record_message(tmp_path):

@@ -44,6 +44,10 @@ _AUDIT_FIELD = re.compile(r"""([^\s=]+)=("[^"]*"|'[^']*'|\S*)|(\S+)""")
 # an EXECVE argument, or a piece of one (a1[0], a1[1], ... after a1_len) when it is too long for one record
 _EXECVE_ARGUMENT = re.compile(r"(a\d+)(\[\d+\])?")
 _HEX_TEXT = re.compile(r"(?:[0-9A-Fa-f]{2})+")
+# A successful execve/execveat audit event is also a Sigma process_creation event (as Sysmon for Linux EventID 1), with
+# these fields; ParentImage, ParentCommandLine and User have no counterpart in the event (only ppid and numeric uids).
+AUDIT_PROCESS_SYSCALLS = {"execve", "execveat"}
+AUDIT_PROCESS_FIELDS = ("Image", "CommandLine", "CurrentDirectory")
 
 # EVTX Channel -> Sigma `service:` (names as used in sigma/rules/windows/builtin).
 CHANNEL_SERVICES = {
@@ -334,12 +338,34 @@ def _audit_record(row: dict) -> dict:
     return {key: value for key, value in record.items() if value is not None}
 
 
+def _audit_process(records: list) -> dict:
+    """Image, CommandLine and CurrentDirectory of an audit event that created a process (a successful execve), else {}.
+
+    ``records`` are ``_audit_record`` dicts. Image is the SYSCALL ``exe``, CommandLine the EXECVE arguments ``a0`` to
+    ``a<argc-1>`` (over all EXECVE records of a split argument list) joined with spaces, as ``proctitle`` is, so an empty
+    argument leaves two spaces; CurrentDirectory is the CWD ``cwd``.
+    """
+    syscall = next((r for r in records if r["type"] == "SYSCALL"), {})
+    if syscall.get("SYSCALL") not in AUDIT_PROCESS_SYSCALLS or syscall.get("success") != "yes":
+        return {}
+    arguments = {}
+    for record in records:
+        if record["type"] == "EXECVE":
+            arguments.update(record)
+    process = {"Image": syscall.get("exe"),
+               "CurrentDirectory": next((r.get("cwd") for r in records if r["type"] == "CWD"), None)}
+    if str(arguments.get("argc", "")).isdigit():
+        process["CommandLine"] = " ".join(arguments.get(f"a{i}", "") for i in range(int(arguments["argc"])))
+    return {field: process[field] for field in AUDIT_PROCESS_FIELDS if process.get(field) is not None}
+
+
 def _audit_event(records: list) -> dict:
     """One row for the records of one audit event, in the order auditd wrote them.
 
     Columns come from the records in that order, the first value winning, so the record that triggered the event (or
     SYSCALL) sets ``audit_type``; ``message`` and ``message_body`` are the records' values joined with newlines.
-    ``audit_records`` is a JSON list of ``_audit_record`` per record, in the same order.
+    ``audit_records`` is a JSON list of ``_audit_record`` per record, in the same order. An event that created a process
+    also has the columns of ``_audit_process`` and the logsource token ``process_creation``.
     """
     records = sorted(records, key=_audit_record_rank)
     event = {}
@@ -348,7 +374,11 @@ def _audit_event(records: list) -> dict:
             event.setdefault(key, value)
     for column in ("message", "message_body"):
         event[column] = "\n".join(record[column] for record in records if record.get(column))
-    event["audit_records"] = json.dumps([_audit_record(record) for record in records], ensure_ascii=False)
+    audit_records = [_audit_record(record) for record in records]
+    event["audit_records"] = json.dumps(audit_records, ensure_ascii=False)
+    if process := _audit_process(audit_records):
+        event.update(process)
+        event["log_type"] = [*event["log_type"], "process_creation"]
     return event
 
 
@@ -367,7 +397,8 @@ def load_plaso_jsonl(path, keep_all_timestamps: bool = False) -> pd.DataFrame:
     syslog, linux, systemd, selinux             linux, + auth if the source file is auth.log* or secure*,
                                                 + syslog if it is syslog* or messages*,
                                                 + sshd / cron / vsftpd from the syslog ``reporter``,
-                                                + auditd for the Linux audit log (``selinux:line``)
+                                                + auditd for the Linux audit log (``selinux:line``),
+                                                + process_creation for its successful execve events
     android                                     android
     ios                                         ios
     anything else (fs:stat, windows:*, ...)     [] (rows kept, count logged; strict mode then matches

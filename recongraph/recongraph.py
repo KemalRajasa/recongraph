@@ -24,7 +24,7 @@ from typing import List, Dict, Any
 from pathlib import Path
 
 from recongraph.event_identity import assign_event_keys, xml_safe
-from recongraph.input_adapters import GENERIC_COLUMNS, detect_input_format, load_plaso_jsonl
+from recongraph.input_adapters import AUDIT_PROCESS_FIELDS, GENERIC_COLUMNS, detect_input_format, load_plaso_jsonl
 
 logger = logging.getLogger(__name__)
 
@@ -855,10 +855,15 @@ class SigmaLabel(object):
                 features = {"log_type": row['log_type']}
                 if isinstance(row.get('audit_records'), str):
                     # an audit event: Sigma rules for auditd describe one record (type EXECVE with a0, type PATH with
-                    # name), so each record is matched on its own and the event gets the rules of all its records
+                    # name), so each record is matched on its own and the event gets the rules of all its records;
+                    # an event that created a process is also matched as one process_creation event
+                    record_log_type = [t for t in row['log_type'] if t != "process_creation"]
                     log_entries = [{**{k: v for k, v in record.items() if k != "message"},
-                                    "desc": record.get("message", ""), "log_type": row['log_type']}
+                                    "desc": record.get("message", ""), "log_type": record_log_type}
                                    for record in json.loads(row['audit_records'])]
+                    if "process_creation" in row['log_type']:
+                        log_entries.append({**{k: row[k] for k in AUDIT_PROCESS_FIELDS if isinstance(row.get(k), str)},
+                                            "desc": desc, "log_type": [t for t in row['log_type'] if t != "auditd"]})
                 else:
                     log_entry = {k: row[k] for k in event_fields if isinstance(row[k], str)}
                     log_entry.update(desc=desc, log_type=row['log_type'])

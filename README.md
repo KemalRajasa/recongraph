@@ -304,6 +304,9 @@ A Linux audit log (`audit.log`, Plaso `selinux:line`) gets the logsource `linux`
 each of its records, by auditd field names (`type`, `SYSCALL`, `a0`, `name`, `exe`,
 `key`, the fields inside `msg='...'`, ...), and the event gets the rules of all its
 records. Hex-encoded text (EXECVE arguments, `proctitle`, `cmd`, ...) is decoded.
+A successful `execve` is also a `process_creation` event with `Image`, `CommandLine`
+and, when the event has a CWD record, `CurrentDirectory`; `ParentImage`,
+`ParentCommandLine` and `User` are not available from the audit log.
 
 ```bash
 psort.py -o json_line -w timeline.jsonl timeline.plaso

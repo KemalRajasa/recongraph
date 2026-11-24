@@ -37,6 +37,14 @@ records are numbers and stay as written. Sigma rules are matched against each re
 ``message`` as the text for keyword selections, and the event gets the rules of all its records; a rule therefore
 never combines fields of two records (``a0`` of SYSCALL and ``a0`` of EXECVE).
 
+An audit event that created a process (SYSCALL ``execve`` or ``execveat`` with ``success=yes``) is also a
+``process_creation`` event, as Sysmon for Linux EventID 1: it gets the logsource token ``process_creation`` and the
+columns ``Image`` (the SYSCALL ``exe``), ``CommandLine`` (the EXECVE arguments ``a0`` to ``a<argc-1>``, over every
+EXECVE record of a split argument list, joined with spaces as ``proctitle`` is) and ``CurrentDirectory`` (the CWD
+``cwd``), each only when the event has it. ``process_creation`` rules are matched once against these fields and the
+event's ``message``, never against single records, and ``auditd`` rules only against records. ``ParentImage``,
+``ParentCommandLine`` and ``User`` stay empty: the audit event holds only ``ppid`` and numeric user IDs.
+
 If not using a Plaso CSV, ReconGraph can also process **raw text logs**. In this case, the tool will treat each line as a description and use the current filename as the source.
 
 Event Identity (``--node=drain``)
