@@ -1,0 +1,31 @@
+{
+ "recongraph_version": "0.0.4",
+ "node_mode": "sigma",
+ "edge_order": "time",
+ "input_file": "dataset/windows_sideload/sideload.jsonl",
+ "sigma_rules_path": "hayabusa-rules/sigma",
+ "sigma_matching": "flexible",
+ "sigma_rules": {
+  "loaded": 4504,
+  "skipped": {
+   "status": 274,
+   "exclude_list": 23,
+   "unsupported_modifier": 23,
+   "invalid": 0
+  },
+  "skipped_by_status": {
+   "deprecated": 232,
+   "unsupported": 42
+  },
+  "exclude_status": [
+   "deprecated",
+   "unsupported"
+  ],
+  "exclude_rules_file": "hayabusa-rules/config/exclude_rules.txt"
+ },
+ "keep_all_timestamps": false,
+ "rows_total": 18,
+ "rows_in_graph": 15,
+ "event_sources": null,
+ "drain3": null
+}

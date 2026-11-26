@@ -415,20 +415,20 @@ layouts, severity filtering, node search, a node inspector, and SVG/JSON export.
 
 ## Examples
 
-The [`dataset/`](dataset/) folder contains ready-made sample datasets, each with
-its source Plaso CSV, the resulting GraphML, and the SVG/JSON exported from the
-visualizer:
+The [`dataset/`](dataset/) folder contains sample datasets. Each sample has its Plaso timeline (JSON Lines and
+CSV) and the ReconGraph output of both node modes, compressed with xz. The Windows samples also include the
+original EVTX file.
 
-| # | Scenario / behavior | Folder |
-|---|---------------------|--------|
-| 1 | Credential access — failed logins | [`dataset/1/`](dataset/1/) |
-| 2 | Defense evasion — Windows Firewall disabled (EVTX) | [`dataset/2/`](dataset/2/) |
-| 3 | Anti-forensics — system time change (Event ID 4616) | [`dataset/3/`](dataset/3/) |
+| Folder | Log | License |
+|--------|-----|---------|
+| [`dataset/windows_sideload/`](dataset/windows_sideload/) | Sysmon, from EVTX-ATTACK-SAMPLES: DLL side-loading, UAC bypass, rundll32 injection, C2 | GPL-3.0 |
+| [`dataset/windows_psexec/`](dataset/windows_psexec/) | Sysmon, from EVTX-ATTACK-SAMPLES: PsExec over SMB, Meterpreter | GPL-3.0 |
+| [`dataset/linux_cam-lds/`](dataset/linux_cam-lds/) | auditd, Apache access log, syslog, from CAM-LDS: web server compromise, sudo to root, SSH key | CC-BY-4.0 |
 
-For a full step-by-step walkthrough on reproducing these samples (generating the
-GraphML, exporting SVG/JSON, and a flexible-vs-strict comparison), see the
-[Examples & Sample Datasets](https://recongraph.readthedocs.io/en/latest/examples.html)
-page in the documentation.
+[`dataset/README.md`](dataset/README.md) explains how to extract and run a sample, and which rule versions were
+used. Each sample's `README.md` gives its source and how its files were made. For a step-by-step walkthrough, see
+the [Examples & Sample Datasets](https://recongraph.readthedocs.io/en/latest/examples.html) page in the
+documentation.
 
 ## How to Test
 
@@ -469,3 +469,11 @@ This project uses **Sigma Rules** for event detection:
 - The **detection rules** from the [SigmaHQ repository](https://github.com/SigmaHQ/sigma)
   are released under the
   [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License).
+
+The sample datasets in [`dataset/`](dataset/) keep the license of their source, which applies to every file in the
+sample's folder:
+
+- `dataset/windows_sideload/` and `dataset/windows_psexec/`: from
+  [EVTX-ATTACK-SAMPLES](https://github.com/sbousseaden/EVTX-ATTACK-SAMPLES) by sbousseaden, GNU GPL-3.0.
+- `dataset/linux_cam-lds/`: from CAM-LDS by M. Landauer et al.,
+  [doi:10.5281/zenodo.18861762](https://doi.org/10.5281/zenodo.18861762), CC-BY-4.0.

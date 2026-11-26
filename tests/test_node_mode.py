@@ -21,7 +21,6 @@ FIXTURES = Path(__file__).parent / "fixtures"
 PLASO = FIXTURES / "plaso"
 RULES = str(FIXTURES / "rules")
 SAMPLE = FIXTURES / "plaso_sample.jsonl"
-REPO = Path(__file__).parents[1]
 EVTX_CSV = "[39 / 0x0027] Provider identifier: {f1ef270a-0d32-4352-ba52-dbab41e1d859} Source Name: Microsoft-Windows-AppModel-Runtime " \
            "Strings: ['x'] Computer Name: WinDev2311Eval Record Number: 253 Event Level: 4"
 
@@ -213,18 +212,6 @@ def test_csv_structured_key_is_parser_and_text_parser_uses_drain3():
     ])
     assert assign_event_keys(df)[0] == ["usnjrnl:Metadata Modification Time", "filestat:Last Access Time", "filestat:Creation Time",
                                         "text/syslog_traditional:listening on port <NUM>"]
-
-
-def test_sample_csv_maps_every_row_with_evtx_key(tmp_path):
-    csv = REPO / "dataset" / "1" / "failed-login.csv"
-    paths = _run(tmp_path, csv, rules=None)
-    source = pd.read_csv(csv, dtype=str)
-    meta = json.loads(Path(paths["metadata_output"]).read_text(encoding="utf-8"))
-    assert meta["rows_in_graph"] == meta["rows_total"] == len(source)
-    assert meta["drain3"]["miners"] == {}
-    events = pd.read_csv(paths["csv_output"], dtype=str)
-    evtx = events[events["row_index"].astype(int).map(source["parser"].eq("winevtx"))]
-    assert evtx["event_key"].str.fullmatch(r"[^:]+:\d+").all()
 
 
 def test_plain_text_input_is_free_text(tmp_path):

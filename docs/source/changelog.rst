@@ -27,6 +27,11 @@ Unreleased
 - **Changed Sigma matching:** rule values are Sigma strings: ``*`` and ``?`` are wildcards and ``\*``, ``\?``, ``\\``
   escapes, as in the Sigma specification and Hayabusa. Before, values were compared as written, so rules with a
   wildcard or a double backslash (``\\Users\\*\\Downloads\\``, ``\\\\.\\pipe``) did not match what they describe.
+- **Changed samples:** ``dataset/`` holds ``windows_sideload``, ``windows_psexec`` (EVTX-ATTACK-SAMPLES, GPL-3.0, with
+  the original EVTX) and ``linux_cam-lds`` (CAM-LDS, CC-BY-4.0), each with its Plaso timeline (JSON Lines and CSV),
+  the ReconGraph output of both node modes, xz-compressed, and a README with source, license and the commands that
+  made it. They replace samples ``1`` to ``3``, and the regression tests that read the CSVs of those samples are
+  removed. The Examples page follows the new samples and uses ``-o`` as an output folder.
 
 v0.0.3
 ------

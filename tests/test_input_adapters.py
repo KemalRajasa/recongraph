@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from recongraph.input_adapters import (CHANNEL_SERVICES, EVENT_CATEGORIES, detect_input_format,
                                        load_plaso_jsonl)
-from recongraph.recongraph import EdgeGraph, SigmaLabel
+from recongraph.recongraph import SigmaLabel
 from tests.conftest import SIGMA
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -313,36 +313,3 @@ def test_jsonl_entry_excludes_generic_columns(tmp_path):
     (tmp_path / "kw.yml").write_text(yaml.safe_dump(rule), encoding="utf-8")
     df = SigmaLabel(str(FIXTURES / "sysmon_lsass.jsonl"), str(tmp_path), flexible_mode=True).run()
     assert df["sigma"].tolist() == [""]
-
-
-# --- regression: CSV path unchanged (sigma 3c0d351, D:\TA\sigma\rules; ~6 min, deselect with -k "not regression") ---
-
-# Recorded on the step-0 code (regex fix, before the JSONL adapter): (rows, labeled, nodes, edges).
-# flexible: 0 since Phase 2b (product check, no message fallback for field selections)
-CSV_BASELINE = {
-    ("1/failed-login.csv", True): (2001, 0, 0, 0),
-    ("1/failed-login.csv", False): (2001, 0, 0, 0),
-    ("2/windows-firewall-disabled-evtx.csv", True): (2000, 0, 0, 0),
-    ("2/windows-firewall-disabled-evtx.csv", False): (2000, 0, 0, 0),
-    # flexible: a `not filter` on fields this CSV does not have fires, as in Hayabusa
-    ("3/4616-with-regex.csv", True): (2001, 2, 1, 1),
-    # strict: the 2 "Relevant Anti-Virus Signature Keywords In Application Log" rows were a logsource false positive
-    ("3/4616-with-regex.csv", False): (2001, 0, 0, 0),
-}
-
-
-@pytest.fixture(scope="module")
-def csv_results(labeled_sample_csvs, tmp_path_factory):
-    out = tmp_path_factory.mktemp("regression")
-    results = {}
-    for i, (key, df) in enumerate(labeled_sample_csvs.items()):
-        graph = EdgeGraph(df, edge_order="file")
-        graph.run_all(graph_output=str(out / f"{i}.graphml"))
-        results[key] = (len(df), int((df["sigma"] != "").sum()), graph.G.number_of_nodes(), graph.G.number_of_edges())
-    return results
-
-
-@pytest.mark.skipif(not (SIGMA / "rules").exists(), reason="sigma rules not found next to recongraph")
-@pytest.mark.parametrize("key", list(CSV_BASELINE), ids=[f"{c}-{'flex' if f else 'strict'}" for c, f in CSV_BASELINE])
-def test_regression_csv_graph_unchanged(csv_results, key):
-    assert csv_results[key] == CSV_BASELINE[key]

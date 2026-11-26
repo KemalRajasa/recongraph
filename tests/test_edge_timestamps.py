@@ -1,13 +1,9 @@
-import json
-from pathlib import Path
-
 import networkx as nx
 import pandas as pd
 import pytest
 
 from recongraph.recongraph import EdgeGraph
 
-FIXTURES = Path(__file__).parent / "fixtures"
 MINUTE_US = 60_000_000
 
 
@@ -141,39 +137,3 @@ def test_export_csv_has_row_index_and_timestamp_us(tmp_path):
 def test_invalid_edge_order():
     with pytest.raises(ValueError):
         EdgeGraph(pd.DataFrame(), edge_order="random")
-
-
-# --- regression: dataset/1-3 aggregate graphs (sigma 3c0d351, D:\TA\sigma\rules; deselect with -k "not regression") ---
-
-EDGE_BASELINE = json.loads((FIXTURES / "edge_baseline.json").read_text(encoding="utf-8"))
-
-
-def _summary(graph):
-    if not graph.events_dict:
-        return {"nodes": [], "edges": []}
-    return {"nodes": sorted(graph.node_labels.values()),
-            "edges": sorted([u, v, d['weight']] for u, v, d in _named_edges(graph, graph.G.edges(data=True)))}
-
-
-@pytest.fixture(scope="module")
-def sample_graphs(labeled_sample_csvs, tmp_path_factory):
-    out = tmp_path_factory.mktemp("edges")
-    graphs = {}
-    for i, ((csv, flexible), df) in enumerate(labeled_sample_csvs.items()):
-        for order in ("file", "time"):
-            graph = EdgeGraph(df, edge_order=order)
-            graph.run_all(graph_output=str(out / f"{i}-{order}.graphml"))
-            graphs[(f"{csv}|{'flexible' if flexible else 'strict'}", order)] = _summary(graph)
-    return graphs
-
-
-@pytest.mark.parametrize("key", list(EDGE_BASELINE))
-def test_regression_file_order_identical(sample_graphs, key):
-    assert sample_graphs[(key, "file")] == EDGE_BASELINE[key]
-
-
-@pytest.mark.parametrize("key", list(EDGE_BASELINE))
-def test_regression_time_order_same_nodes_and_transition_count(sample_graphs, key):
-    time_graph, base = sample_graphs[(key, "time")], EDGE_BASELINE[key]
-    assert time_graph["nodes"] == base["nodes"]
-    assert sum(e[2] for e in time_graph["edges"]) == sum(e[2] for e in base["edges"])

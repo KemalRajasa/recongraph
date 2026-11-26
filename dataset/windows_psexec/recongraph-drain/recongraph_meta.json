@@ -1,0 +1,73 @@
+{
+ "recongraph_version": "0.0.4",
+ "node_mode": "drain",
+ "edge_order": "time",
+ "input_file": "dataset/windows_psexec/psexec.jsonl",
+ "sigma_rules_path": "hayabusa-rules/sigma",
+ "sigma_matching": "flexible",
+ "sigma_rules": {
+  "loaded": 4504,
+  "skipped": {
+   "status": 274,
+   "exclude_list": 23,
+   "unsupported_modifier": 23,
+   "invalid": 0
+  },
+  "skipped_by_status": {
+   "deprecated": 232,
+   "unsupported": 42
+  },
+  "exclude_status": [
+   "deprecated",
+   "unsupported"
+  ],
+  "exclude_rules_file": "hayabusa-rules/config/exclude_rules.txt"
+ },
+ "keep_all_timestamps": false,
+ "rows_total": 10,
+ "rows_in_graph": 10,
+ "event_sources": {
+  "evtx": {
+   "windows:evtx:record": 10
+  },
+  "structured": {},
+  "free_text": {}
+ },
+ "drain3": {
+  "version": "0.9.11",
+  "config": {
+   "sim_th": 0.4,
+   "depth": 4,
+   "max_children": 100,
+   "mask_prefix": "<",
+   "mask_suffix": ">",
+   "masking": [
+    {
+     "mask_with": "GUID",
+     "pattern": "\\{?\\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\\b\\}?"
+    },
+    {
+     "mask_with": "SID",
+     "pattern": "\\bS-1-\\d+(?:-\\d+)+\\b"
+    },
+    {
+     "mask_with": "PATH",
+     "pattern": "(?<![\\w\\\\])(?:[A-Za-z]:)?\\\\{1,2}[^\\s\\\"'<>|,;]+|(?<![\\w/:.])(?:/[\\w.\\-]+)+/?"
+    },
+    {
+     "mask_with": "IP",
+     "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b|(?<![\\w:.])(?=[0-9a-fA-F:]*[0-9a-fA-F])(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4})*)?::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4})*)?(?![\\w:.])|(?<![\\w:.])(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}(?![\\w:.])"
+    },
+    {
+     "mask_with": "HEX",
+     "pattern": "\\b0[xX][0-9a-fA-F]+\\b|\\b(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{8,}\\b|\\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5,}\\b"
+    },
+    {
+     "mask_with": "NUM",
+     "pattern": "\\b\\d+(?:\\.\\d+)?\\b"
+    }
+   ]
+  },
+  "miners": {}
+ }
+}
